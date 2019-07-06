@@ -22,6 +22,7 @@ const GENERATIONS: usize = 8;
 
 pub struct StoreInner<H: ByteHash> {
     generations: ArrayVec<[RwLock<Box<dyn Backend<H>>>; GENERATIONS]>,
+    #[allow(unused)]
     cache: Cache<H::Digest>,
 }
 
@@ -35,73 +36,7 @@ pub struct Shared<T, H: ByteHash>(T, PhantomData<H>);
 
 unsafe impl<T, H: ByteHash> Send for Shared<T, H> {}
 
-// impl<T: Persist<H>, H: ByteHash> Shared<T, H> {
-//     pub fn make_local(self) -> T {
-//         self.0
-//     }
-// }
-
-// pub trait Persist<H: ByteHash>
-// where
-//     Self: Sized + Clone,
-// {
-//     type Inner: Content<H>;
-
-//     fn store(&self) -> &Store<H>;
-//     fn from_inner_store(inner: Self::Inner, store: &Store<H>) -> Self;
-//     fn inner_mut(&mut self) -> &mut Self::Inner;
-
-//     fn snapshot(
-//         &mut self,
-//         store: &Store<H>,
-//     ) -> io::Result<Snapshot<Self::Inner, H>> {
-//         // let mut sink = StoreSink::new(store);
-//         // self.inner_mut().persist(&mut sink)?;
-//         // Ok(Snapshot {
-//         //     hash: sink.fin()?,
-//         //     store: store.clone(),
-//         //     _marker: PhantomData,
-//         // })
-//         unimplemented!()
-//     }
-
-//     fn share(&mut self) -> Shared<Self, H> {
-//         for c in self.inner_mut().children_mut() {
-//             c.make_shared()
-//         }
-//         Shared(self.clone(), PhantomData)
-//     }
-
-//     // fn from_snapshot(snap: &Snapshot<Self::Inner, H>) -> io::Result<Self> {
-//     //     unimplemented!()
-//     //     // let inner = snap.store.restore(&snap.hash)?;
-//     //     // Ok(Self::from_inner_store(inner, &snap.store))
-//     // }
-
-//     // Writes out the datastructure as the root, possibly deleting nodes
-//     // not reachable from this root.
-//     // fn commit(&self, store: &Store<H>, level: usize) -> io::Result<()> {
-//     //     unimplemented!()
-//     // }
-// }
-
-// pub struct Snapshot<T, H: ByteHash> {
-//     inner: Handle,
-//     store: Store<H>,
-//     _marker: PhantomData<T>,
-// }
-
-// impl<T, H: ByteHash> Clone for Snapshot<T, H> {
-//     fn clone(&self) -> Self {
-//         Snapshot {
-//             hash: self.hash.clone(),
-//             store: self.store.clone(),
-//             _marker: PhantomData,
-//         }
-//     }
-// }
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Snapshot<T, H: ByteHash> {
     hash: H::Digest,
     _marker: PhantomData<T>,
@@ -113,11 +48,6 @@ impl<T: Content<H>, H: ByteHash> Snapshot<T, H> {
             hash,
             _marker: PhantomData,
         }
-    }
-
-    pub fn restore(&self, store: &Store<H>) -> io::Result<T> {
-        unimplemented!()
-        //Ok(store.get::<T, C>(&self.hash)?.clone())
     }
 }
 
@@ -145,7 +75,7 @@ impl<H: ByteHash> Store<H> {
         content: &mut T,
     ) -> io::Result<Snapshot<T, H>> {
         let children: &mut [Handle<T::Leaf, T::Node, H>] =
-            content.children_mut::<T>();
+            content.children_mut();
         for c in children {
             c.pre_persist(self)?;
         }
@@ -158,14 +88,6 @@ impl<H: ByteHash> Store<H> {
         })
     }
 
-    // pub(crate) fn get<T: Content<T, H>, N: Content<T, H>>(
-    //     &self,
-    //     hash: &H::Digest,
-    // ) -> io::Result<Cached<T>> {
-    //     let t = self.restore(hash)?;
-    //     Ok(self.0.cache.insert(hash.clone(), t))
-    // }
-
     pub(crate) fn put(
         &self,
         hash: H::Digest,
@@ -174,12 +96,12 @@ impl<H: ByteHash> Store<H> {
         self.0.generations[0].write().put(hash, bytes)
     }
 
-    pub fn restore<T: Content<H>, N: Content<H>>(
+    pub fn restore<T: Content<H>>(
         &self,
-        hash: &H::Digest,
+        snap: &Snapshot<T, H>,
     ) -> io::Result<T> {
         for gen in self.0.generations.as_ref() {
-            match gen.read().get(hash) {
+            match gen.read().get(&snap.hash) {
                 Ok(read) => {
                     let mut source = Source::new(read, self);
                     return T::restore(&mut source);
@@ -189,10 +111,6 @@ impl<H: ByteHash> Store<H> {
         }
         panic!("could not restore");
     }
-
-    // pub fn backend(&self) -> &Backend<H> {
-    //     &*self.0.backend
-    // }
 
     pub fn size(&self) -> usize {
         let mut size = 0;

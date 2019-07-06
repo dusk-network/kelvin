@@ -3,12 +3,13 @@ use std::mem;
 use std::sync::Arc;
 
 use bytehash::ByteHash;
-use cache::Cached;
+// use cache::Cached;
 
 use crate::content::Content;
 use crate::sink::StoreSink;
 use crate::store::{Snapshot, Store};
 
+#[derive(Debug)]
 pub enum Handle<L, N, H: ByteHash> {
     Leaf(L),
     Node(Box<N>),
@@ -40,19 +41,36 @@ impl<L: Content<H>, N: Content<H>, H: ByteHash> Content<H> for Handle<L, N, H> {
     type Node = N;
 
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
-        // TODO: Refactor this
         match self {
             Handle::Persisted(ref digest) => {
+                sink.write_all(&[0])?;
                 sink.write_all((**digest).as_ref())
+            }
+            Handle::Leaf(ref mut leaf) => {
+                sink.write_all(&[255])?;
+                leaf.persist(sink)
             }
             _ => panic!("Attempt at persisting a non-hash Handle"),
         }
     }
 
     fn restore(source: &mut dyn Read) -> io::Result<Self> {
-        let mut h = H::Digest::default();
-        source.read(h.as_mut())?;
-        Ok(Handle::Persisted(Snapshot::new(h)))
+        let mut tag = [0u8];
+        source.read_exact(&mut tag)?;
+        match tag {
+            [0] => {
+                let mut h = H::Digest::default();
+                source.read(h.as_mut())?;
+                Ok(Handle::Persisted(Snapshot::new(h)))
+            }
+            // We leave the rest of the bytes for future hash-function
+            // upgrades
+            [255] => Ok(Handle::leaf(L::restore(source)?)),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid Handle encoding",
+            )),
+        }
     }
 }
 
@@ -63,33 +81,32 @@ impl<L: Content<H>, N: Content<H>, H: ByteHash> Handle<L, N, H> {
 
     pub fn pre_persist(&mut self, store: &Store<H>) -> io::Result<()> {
         let hash = match self {
-            Handle::Leaf(ref mut leaf) => {
-                let mut sink = StoreSink::new(store);
-                leaf.persist(&mut sink)?;
-                sink.fin()?
-            }
             Handle::Node(node) => {
+                println!("b");
                 let mut sink = StoreSink::new(store);
                 node.persist(&mut sink)?;
                 sink.fin()?
             }
-            Handle::SharedNode(ref mut arc) => unsafe {
+            Handle::SharedNode(ref mut arc) => {
+                println!("c");
                 let mut sink = StoreSink::new(store);
                 Arc::make_mut(arc).persist(&mut sink)?;
                 sink.fin()?
-            },
-            Handle::None | Handle::Persisted(_) => return Ok(()),
+            }
+            Handle::Leaf(_) | Handle::None | Handle::Persisted(_) => {
+                return Ok(())
+            }
         };
         *self = Handle::Persisted(Snapshot::new(hash));
         Ok(())
     }
 
-    pub fn get<'a>(&'a self, store: &'a Store<H>) -> io::Result<Cached<'a, L>> {
-        match self {
-            Handle::Leaf(ref val) => Ok(Cached::Borrowed(val)),
-            _ => panic!("Attempt to get non-Leaf value"),
-        }
-    }
+    // pub fn get<'a>(&'a self, store: &'a Store<H>) -> io::Result<Cached<'a, L>> {
+    //     match self {
+    //         Handle::Leaf(ref val) => Ok(Cached::Borrowed(val)),
+    //         _ => panic!("Attempt to get non-Leaf value"),
+    //     }
+    // }
 
     pub fn make_shared(&mut self) {
         if let Handle::Node(_) = self {
@@ -103,10 +120,10 @@ impl<L: Content<H>, N: Content<H>, H: ByteHash> Handle<L, N, H> {
         }
     }
 
-    pub fn get_mut(&mut self, store: &Store<H>) -> io::Result<&mut L> {
-        match self {
-            Handle::Leaf(ref mut val) => Ok(val),
-            _ => panic!("Attempt to get_mut non-Leaf value"),
-        }
-    }
+    // pub fn get_mut(&mut self, store: &Store<H>) -> io::Result<&mut L> {
+    //     match self {
+    //         Handle::Leaf(ref mut val) => Ok(val),
+    //         _ => panic!("Attempt to get_mut non-Leaf value"),
+    //     }
+    // }
 }
