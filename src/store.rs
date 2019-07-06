@@ -6,7 +6,7 @@ use std::{fmt, io};
 
 use arrayvec::ArrayVec;
 use bytehash::ByteHash;
-use cache::{Cache, Cached};
+use cache::Cache;
 use parking_lot::RwLock;
 
 use crate::backend::{Backend, MemBackend, PutResult};
@@ -116,11 +116,12 @@ impl<T: Content<H>, H: ByteHash> Snapshot<T, H> {
     }
 
     pub fn restore(&self, store: &Store<H>) -> io::Result<T> {
-        Ok(store.get::<T>(&self.hash)?.clone())
+        unimplemented!()
+        //Ok(store.get::<T, C>(&self.hash)?.clone())
     }
 }
 
-impl<T, H: ByteHash> Deref for Snapshot<T, H> {
+impl<N, H: ByteHash> Deref for Snapshot<N, H> {
     type Target = H::Digest;
     fn deref(&self) -> &Self::Target {
         &self.hash
@@ -139,11 +140,12 @@ impl<H: ByteHash> Store<H> {
         }))
     }
 
-    pub fn persist<T: Content<H>, C: Content<H>>(
+    pub fn persist<T: Content<H>>(
         &self,
         content: &mut T,
     ) -> io::Result<Snapshot<T, H>> {
-        let children: &mut [Handle<T, C, H>] = content.children_mut();
+        let children: &mut [Handle<T::Leaf, T::Node, H>] =
+            content.children_mut::<T>();
         for c in children {
             c.pre_persist(self)?;
         }
@@ -156,13 +158,13 @@ impl<H: ByteHash> Store<H> {
         })
     }
 
-    pub(crate) fn get<T: Content<H>>(
-        &self,
-        hash: &H::Digest,
-    ) -> io::Result<Cached<T>> {
-        let t = self.restore(hash)?;
-        Ok(self.0.cache.insert(hash.clone(), t))
-    }
+    // pub(crate) fn get<T: Content<T, H>, N: Content<T, H>>(
+    //     &self,
+    //     hash: &H::Digest,
+    // ) -> io::Result<Cached<T>> {
+    //     let t = self.restore(hash)?;
+    //     Ok(self.0.cache.insert(hash.clone(), t))
+    // }
 
     pub(crate) fn put(
         &self,
@@ -172,7 +174,10 @@ impl<H: ByteHash> Store<H> {
         self.0.generations[0].write().put(hash, bytes)
     }
 
-    pub fn restore<T: Content<H>>(&self, hash: &H::Digest) -> io::Result<T> {
+    pub fn restore<T: Content<H>, N: Content<H>>(
+        &self,
+        hash: &H::Digest,
+    ) -> io::Result<T> {
         for gen in self.0.generations.as_ref() {
             match gen.read().get(hash) {
                 Ok(read) => {
