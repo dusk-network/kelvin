@@ -1,4 +1,3 @@
-use std::cell::UnsafeCell;
 use std::io::{self, Read, Write};
 use std::mem;
 use std::sync::Arc;
@@ -10,33 +9,36 @@ use crate::content::Content;
 use crate::sink::StoreSink;
 use crate::store::{Snapshot, Store};
 
-pub enum Handle<T, C, H: ByteHash> {
-    Val(T),
-    Shared(Arc<UnsafeCell<T>>),
-    Compound(Box<C>),
-    Persisted(Snapshot<C, H>),
+pub enum Handle<L, N, H: ByteHash> {
+    Leaf(L),
+    Node(Box<N>),
+    SharedNode(Arc<N>),
+    Persisted(Snapshot<N, H>),
     None,
 }
 
-impl<T, C, H: ByteHash> Default for Handle<T, C, H> {
+impl<L, N, H: ByteHash> Default for Handle<L, N, H> {
     fn default() -> Self {
         Handle::None
     }
 }
 
-impl<T: Clone, C: Clone, H: ByteHash> Clone for Handle<T, C, H> {
+impl<L: Clone, N: Clone, H: ByteHash> Clone for Handle<L, N, H> {
     fn clone(&self) -> Self {
         match self {
-            Handle::Val(ref t) => Handle::Val(t.clone()),
-            Handle::Compound(ref c) => Handle::Compound(c.clone()),
+            Handle::Leaf(ref l) => Handle::Leaf(l.clone()),
+            Handle::Node(ref n) => Handle::Node(n.clone()),
+            Handle::SharedNode(ref arc) => Handle::SharedNode(arc.clone()),
             Handle::Persisted(ref snap) => Handle::Persisted(snap.clone()),
-            Handle::Shared(ref arc) => Handle::Shared(arc.clone()),
             Handle::None => Handle::None,
         }
     }
 }
 
-impl<T: Content<H>, C: Content<H>, H: ByteHash> Content<H> for Handle<T, C, H> {
+impl<L: Content<H>, N: Content<H>, H: ByteHash> Content<H> for Handle<L, N, H> {
+    type Leaf = L;
+    type Node = N;
+
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         // TODO: Refactor this
         match self {
@@ -54,46 +56,45 @@ impl<T: Content<H>, C: Content<H>, H: ByteHash> Content<H> for Handle<T, C, H> {
     }
 }
 
-impl<T: Content<H>, C: Content<H>, H: ByteHash> Handle<T, C, H> {
-    pub fn val(t: T) -> Handle<T, C, H> {
-        Handle::Val(t)
+impl<L: Content<H>, N: Content<H>, H: ByteHash> Handle<L, N, H> {
+    pub fn leaf(t: L) -> Handle<L, N, H> {
+        Handle::Leaf(t)
     }
 
     pub fn pre_persist(&mut self, store: &Store<H>) -> io::Result<()> {
         let hash = match self {
-            Handle::Val(ref mut val) => {
+            Handle::Leaf(ref mut leaf) => {
                 let mut sink = StoreSink::new(store);
-                val.persist(&mut sink)?;
+                leaf.persist(&mut sink)?;
                 sink.fin()?
             }
-            Handle::Shared(arc) => unsafe {
+            Handle::Node(node) => {
                 let mut sink = StoreSink::new(store);
-                (*arc.get()).persist(&mut sink)?;
+                node.persist(&mut sink)?;
+                sink.fin()?
+            }
+            Handle::SharedNode(ref mut arc) => unsafe {
+                let mut sink = StoreSink::new(store);
+                Arc::make_mut(arc).persist(&mut sink)?;
                 sink.fin()?
             },
-            Handle::Compound(_c) => unimplemented!(),
             Handle::None | Handle::Persisted(_) => return Ok(()),
         };
         *self = Handle::Persisted(Snapshot::new(hash));
         Ok(())
     }
 
-    pub fn get<'a>(&'a self, store: &'a Store<H>) -> io::Result<Cached<'a, T>> {
+    pub fn get<'a>(&'a self, store: &'a Store<H>) -> io::Result<Cached<'a, L>> {
         match self {
-            Handle::Val(ref val) => Ok(Cached::Borrowed(val)),
-            Handle::Shared(ref arc) => unsafe {
-                Ok(Cached::Borrowed(&*arc.get()))
-            },
-            Handle::Persisted(snapshot) => store.get(&snapshot),
-            Handle::Compound(_) => panic!("Attempt to get Compound value"),
-            Handle::None => panic!("Attempt to get None value"),
+            Handle::Leaf(ref val) => Ok(Cached::Borrowed(val)),
+            _ => panic!("Attempt to get non-Leaf value"),
         }
     }
 
     pub fn make_shared(&mut self) {
-        if let Handle::Val(_) = self {
-            if let Handle::Val(t) = mem::replace(self, Handle::None) {
-                *self = Handle::Shared(Arc::new(UnsafeCell::new(t)))
+        if let Handle::Node(_) = self {
+            if let Handle::Node(node) = mem::replace(self, Handle::None) {
+                *self = Handle::SharedNode(Arc::new(*node))
             } else {
                 unreachable!()
             }
@@ -102,22 +103,10 @@ impl<T: Content<H>, C: Content<H>, H: ByteHash> Handle<T, C, H> {
         }
     }
 
-    pub fn get_mut(&mut self, store: &Store<H>) -> io::Result<&mut T>
-    where
-        T: Clone,
-    {
+    pub fn get_mut(&mut self, store: &Store<H>) -> io::Result<&mut L> {
         match self {
-            Handle::Val(ref mut val) => Ok(val),
-            Handle::Shared(arc) => {
-                *self = unsafe { Handle::Val((*arc.get()).clone()) };
-                self.get_mut(store)
-            }
-            Handle::Persisted(snap) => {
-                *self = Handle::Compound(Box::new(snap.restore(store)?));
-                self.get_mut(store)
-            }
-            Handle::Compound(_) => panic!("Attempt to get_mut Compound value"),
-            Handle::None => panic!("Attempt to get_mut None value"),
+            Handle::Leaf(ref mut val) => Ok(val),
+            _ => panic!("Attempt to get_mut non-Leaf value"),
         }
     }
 }
