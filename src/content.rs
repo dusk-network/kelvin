@@ -16,8 +16,12 @@ where
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()>;
     fn restore(source: &mut dyn Read) -> io::Result<Self>;
 
-    fn children_mut(&mut self) -> &mut [Handle<Self::Leaf, Self::Node, H>] {
+    fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
         &mut []
+    }
+
+    fn children(&self) -> &[Handle<Self, H>] {
+        &[]
     }
 }
 

@@ -74,8 +74,7 @@ impl<H: ByteHash> Store<H> {
         &self,
         content: &mut T,
     ) -> io::Result<Snapshot<T, H>> {
-        let children: &mut [Handle<T::Leaf, T::Node, H>] =
-            content.children_mut();
+        let children: &mut [Handle<T, H>] = content.children_mut();
         for c in children {
             c.pre_persist(self)?;
         }
