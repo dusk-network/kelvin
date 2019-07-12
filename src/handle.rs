@@ -15,9 +15,9 @@ where
     H: ByteHash,
 {
     Leaf(C::Leaf),
-    Node(Box<C::Node>),
-    SharedNode(Arc<C::Node>),
-    Persisted(Snapshot<C::Node, H>),
+    Node(Box<C>),
+    SharedNode(Arc<C>),
+    Persisted(Snapshot<C, H>),
     None,
 }
 
@@ -33,7 +33,7 @@ where
     H: ByteHash,
 {
     Leaf(&'a C::Leaf),
-    Node(Cached<'a, C::Node>),
+    Node(Cached<'a, C>),
     None,
 }
 
@@ -43,7 +43,7 @@ where
     H: ByteHash,
 {
     Leaf(&'a mut C::Leaf),
-    Node(&'a mut C::Node),
+    Node(&'a mut C),
     None,
 }
 
@@ -53,7 +53,7 @@ where
     H: ByteHash,
 {
     Leaf(C::Leaf),
-    Node(C::Node),
+    Node(C),
     None,
 }
 
@@ -93,7 +93,6 @@ where
     H: ByteHash,
 {
     type Leaf = ();
-    type Node = ();
 
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         self.0.persist(sink)
@@ -110,7 +109,6 @@ where
     H: ByteHash,
 {
     type Leaf = ();
-    type Node = ();
 
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         match self {
@@ -155,22 +153,61 @@ where
         Handle(HandleInner::Leaf(l))
     }
 
-    pub fn node(n: C::Node) -> Handle<C, H> {
+    pub fn node(n: C) -> Handle<C, H> {
         Handle(HandleInner::Node(Box::new(n)))
     }
 
-    pub fn replace(&mut self, _with: HandleOwned<C, H>) -> HandleOwned<C, H> {
-        unimplemented!()
+    pub fn replace(&mut self, with: HandleOwned<C, H>) -> Option<C::Leaf> {
+        match with {
+            HandleOwned::None => {
+                if let HandleInner::Leaf(replaced) =
+                    mem::replace(&mut self.0, HandleInner::None)
+                {
+                    Some(replaced)
+                } else {
+                    None
+                }
+            }
+            HandleOwned::Leaf(leaf) => {
+                if let HandleInner::Leaf(replaced) =
+                    mem::replace(&mut self.0, HandleInner::Leaf(leaf))
+                {
+                    Some(replaced)
+                } else {
+                    None
+                }
+            }
+            HandleOwned::Node(node) => {
+                if let HandleInner::Leaf(leaf) =
+                    mem::replace(&mut self.0, HandleInner::Node(Box::new(node)))
+                {
+                    Some(leaf)
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     pub fn inner(&self) -> HandleRef<C, H> {
-        unimplemented!()
+        match self.0 {
+            HandleInner::None => HandleRef::None,
+            HandleInner::Leaf(ref l) => HandleRef::Leaf(l),
+            HandleInner::Node(ref n) => {
+                HandleRef::Node(Cached::Borrowed(n.as_ref()))
+            }
+            HandleInner::SharedNode(ref n) => {
+                HandleRef::Node(Cached::Borrowed(n.as_ref()))
+            }
+            _ => unimplemented!(),
+        }
     }
 
     pub fn inner_mut(&mut self) -> HandleMut<C, H> {
         match self.0 {
             HandleInner::None => HandleMut::None,
             HandleInner::Leaf(ref mut l) => HandleMut::Leaf(l),
+            HandleInner::Node(ref mut n) => HandleMut::Node(n.as_mut()),
             _ => unimplemented!(),
         }
     }
