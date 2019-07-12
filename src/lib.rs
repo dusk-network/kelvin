@@ -1,7 +1,9 @@
 mod backend;
+mod branch;
 mod content;
 mod handle;
 mod iter;
+mod search;
 mod sink;
 mod source;
 mod store;

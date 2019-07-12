@@ -11,7 +11,6 @@ where
     Self: Sized + Clone + 'static,
 {
     type Leaf: Content<H>;
-    type Node: Content<H>;
 
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()>;
     fn restore(source: &mut dyn Read) -> io::Result<Self>;
@@ -27,7 +26,6 @@ where
 
 impl<T: Content<H>, H: ByteHash> Content<H> for Option<T> {
     type Leaf = ();
-    type Node = ();
 
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         match *self {
@@ -52,7 +50,6 @@ impl<T: Content<H>, H: ByteHash> Content<H> for Option<T> {
 
 impl<T: Content<H>, H: ByteHash> Content<H> for Box<T> {
     type Leaf = ();
-    type Node = ();
 
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         (**self).persist(sink)
@@ -65,7 +62,6 @@ impl<T: Content<H>, H: ByteHash> Content<H> for Box<T> {
 
 impl<H: ByteHash> Content<H> for () {
     type Leaf = ();
-    type Node = ();
 
     fn persist(&mut self, _: &mut dyn Write) -> io::Result<()> {
         Ok(())
@@ -78,7 +74,6 @@ impl<H: ByteHash> Content<H> for () {
 
 impl<X: 'static, H: ByteHash> Content<H> for PhantomData<X> {
     type Leaf = ();
-    type Node = ();
 
     fn persist(&mut self, _: &mut dyn Write) -> io::Result<()> {
         Ok(())
@@ -90,7 +85,6 @@ impl<X: 'static, H: ByteHash> Content<H> for PhantomData<X> {
 
 impl<H: ByteHash> Content<H> for u8 {
     type Leaf = ();
-    type Node = ();
 
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         sink.write(&[*self])?;
@@ -106,7 +100,6 @@ impl<H: ByteHash> Content<H> for u8 {
 
 impl<H: ByteHash> Content<H> for String {
     type Leaf = ();
-    type Node = ();
 
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         let bytes = self.as_bytes();
@@ -126,7 +119,6 @@ impl<H: ByteHash> Content<H> for String {
 
 impl<H: ByteHash, T: Content<H>> Content<H> for Vec<T> {
     type Leaf = ();
-    type Node = ();
 
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         sink.write_u64::<BigEndian>(self.len() as u64)?;
@@ -151,7 +143,6 @@ macro_rules! number {
     ($t:ty : $read:ident, $write:ident) => {
         impl<H: ByteHash> Content<H> for $t {
             type Leaf = ();
-            type Node = ();
 
             fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
                 sink.$write::<BigEndian>(*self)
@@ -181,7 +172,6 @@ where
     H: ByteHash,
 {
     type Leaf = ();
-    type Node = ();
 
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         self.0.persist(sink)?;

@@ -3,6 +3,7 @@ authors = ["Kristoffer Ström <kristoffer@rymdkoloni.se>"]
 edition = "2018"
 name = "cryogen"
 version = "0.2.0"
+
 [dependencies]
 arrayvec = "0.4.10"
 bytehash = "*"
@@ -12,6 +13,7 @@ owning_ref = "0.4.0"
 parking_lot = "0.6.4"
 tempfile = "3.0.3"
 appendix = "0.1"
+smallvec = "0.6"
 
 [dependencies.byteorder]
 features = ["i128"]
