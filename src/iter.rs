@@ -1,88 +1,127 @@
 use std::mem;
 
-use cache::Cached;
-
-use crate::branch::Branch;
+use crate::branch::{Branch, BranchMut};
+use crate::compound::Compound;
 use crate::search::{First, Method};
-use crate::Handle;
-use crate::{ByteHash, Content};
+use crate::ByteHash;
 
-pub struct LeafIter<'a, C, M, H>
+pub enum LeafIter<'a, C, M, H>
 where
-    C: Content<H>,
+    C: Compound<H>,
     H: ByteHash,
 {
-    method: M,
-    state: LeafIterState<'a, C, H>,
-}
-
-enum LeafIterState<'a, C, H>
-where
-    C: Content<H>,
-    H: ByteHash,
-{
-    Initial(Cached<'a, C>),
-    Branch(Branch<'a, C, H>),
+    Initial(&'a C, M),
+    Branch(Branch<'a, C, H>, M),
     Exhausted,
 }
 
 impl<'a, C, M, H> Iterator for LeafIter<'a, C, M, H>
 where
-    C: Content<H>,
+    C: Compound<H>,
     M: 'a + Method,
     H: ByteHash,
 {
     type Item = &'a C::Leaf;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let old_state = mem::replace(&mut self.state, LeafIterState::Exhausted);
-        match old_state {
-            LeafIterState::Initial(node) => {
-                match Branch::new(node, &mut self.method) {
+        let old = mem::replace(self, LeafIter::Exhausted);
+        match old {
+            LeafIter::Initial(node, mut method) => {
+                match Branch::new(node, &mut method) {
                     Some(branch) => {
-                        self.state = LeafIterState::Branch(branch);
+                        *self = LeafIter::Branch(branch, method);
                     }
                     None => {
-                        self.state = LeafIterState::Exhausted;
+                        *self = LeafIter::Exhausted;
                     }
                 }
             }
-            LeafIterState::Branch(branch) => {
-                if let Some(branch) = branch.search(&mut self.method) {
-                    self.state = LeafIterState::Branch(branch)
+            LeafIter::Branch(branch, mut method) => {
+                if let Some(branch) = branch.search(&mut method) {
+                    *self = LeafIter::Branch(branch, method)
                 }
             }
-            LeafIterState::Exhausted => return None,
+            LeafIter::Exhausted => return None,
         }
+
         let self_unsafe: &'a mut Self = unsafe { mem::transmute(self) };
-        match self_unsafe.state {
-            LeafIterState::Branch(ref branch) => {
-                // TODO: motivate this use of unsafe
-                Some(branch.leaf())
+
+        match self_unsafe {
+            LeafIter::Branch(ref branch, _) => Some(&*branch),
+            LeafIter::Initial(_, _) => unreachable!(),
+            LeafIter::Exhausted => None,
+        }
+    }
+}
+
+pub enum LeafIterMut<'a, C, M, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    Initial(&'a mut C, M),
+    Branch(BranchMut<'a, C, H>, M),
+    Exhausted,
+}
+
+impl<'a, C, M, H> Iterator for LeafIterMut<'a, C, M, H>
+where
+    C: Compound<H>,
+    M: 'a + Method,
+    H: ByteHash,
+{
+    type Item = &'a mut C::Leaf;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let old = mem::replace(self, LeafIterMut::Exhausted);
+        match old {
+            LeafIterMut::Initial(node, mut method) => {
+                match BranchMut::new(node, &mut method) {
+                    Some(branch) => {
+                        *self = LeafIterMut::Branch(branch, method);
+                    }
+                    None => {
+                        *self = LeafIterMut::Exhausted;
+                    }
+                }
             }
-            LeafIterState::Initial(_) => unreachable!(),
-            LeafIterState::Exhausted => None,
+            LeafIterMut::Branch(branch, mut method) => {
+                if let Some(branch) = branch.search(&mut method) {
+                    *self = LeafIterMut::Branch(branch, method)
+                }
+            }
+            LeafIterMut::Exhausted => return None,
+        }
+
+        let self_unsafe: &'a mut Self = unsafe { mem::transmute(self) };
+
+        match self_unsafe {
+            LeafIterMut::Branch(ref mut branch, _) => Some(&mut *branch),
+            LeafIterMut::Initial(_, _) => unreachable!(),
+            LeafIterMut::Exhausted => None,
         }
     }
 }
 
 pub trait LeafIterable<H>
 where
-    Self: Content<H>,
+    Self: Compound<H>,
     H: ByteHash,
 {
     fn iter(&self) -> LeafIter<Self, First, H>;
+    fn iter_mut(&mut self) -> LeafIterMut<Self, First, H>;
 }
 
 impl<C, H> LeafIterable<H> for C
 where
-    C: Content<H>,
+    C: Compound<H>,
     H: ByteHash,
 {
     fn iter(&self) -> LeafIter<Self, First, H> {
-        LeafIter {
-            state: LeafIterState::Initial(Cached::Borrowed(self)),
-            method: First,
-        }
+        LeafIter::Initial(self, First)
+    }
+
+    fn iter_mut(&mut self) -> LeafIterMut<Self, First, H> {
+        LeafIterMut::Initial(self, First)
     }
 }

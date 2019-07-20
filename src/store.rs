@@ -10,7 +10,7 @@ use cache::Cache;
 use parking_lot::RwLock;
 
 use crate::backend::{Backend, MemBackend, PutResult};
-use crate::content::Content;
+use crate::compound::Compound;
 use crate::handle::Handle;
 use crate::sink::StoreSink;
 use crate::source::Source;
@@ -42,7 +42,7 @@ pub struct Snapshot<T, H: ByteHash> {
     _marker: PhantomData<T>,
 }
 
-impl<T: Content<H>, H: ByteHash> Snapshot<T, H> {
+impl<T: Compound<H>, H: ByteHash> Snapshot<T, H> {
     pub(crate) fn new(hash: H::Digest) -> Self {
         Snapshot {
             hash,
@@ -70,17 +70,17 @@ impl<H: ByteHash> Store<H> {
         }))
     }
 
-    pub fn persist<T: Content<H>>(
+    pub fn persist<T: Compound<H>>(
         &self,
-        content: &mut T,
+        compound: &mut T,
     ) -> io::Result<Snapshot<T, H>> {
-        let children: &mut [Handle<T, H>] = content.children_mut();
+        let children: &mut [Handle<T, H>] = compound.children_mut();
         for c in children {
             c.pre_persist(self)?;
         }
 
         let mut sink = StoreSink::new(self);
-        content.persist(&mut sink)?;
+        compound.persist(&mut sink)?;
         Ok(Snapshot {
             hash: sink.fin()?,
             _marker: PhantomData,
@@ -95,7 +95,7 @@ impl<H: ByteHash> Store<H> {
         self.0.generations[0].write().put(hash, bytes)
     }
 
-    pub fn restore<T: Content<H>>(
+    pub fn restore<T: Compound<H>>(
         &self,
         snap: &Snapshot<T, H>,
     ) -> io::Result<T> {

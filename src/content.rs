@@ -4,29 +4,15 @@ use std::marker::PhantomData;
 use bytehash::ByteHash;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::handle::Handle;
-
 pub trait Content<H: ByteHash>
 where
-    Self: Sized + Clone + 'static,
+    Self: Sized + Clone + 'static + PartialEq + Eq,
 {
-    type Leaf: Content<H>;
-
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()>;
     fn restore(source: &mut dyn Read) -> io::Result<Self>;
-
-    fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
-        &mut []
-    }
-
-    fn children(&self) -> &[Handle<Self, H>] {
-        &[]
-    }
 }
 
 impl<T: Content<H>, H: ByteHash> Content<H> for Option<T> {
-    type Leaf = ();
-
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         match *self {
             Some(ref mut content) => {
@@ -49,8 +35,6 @@ impl<T: Content<H>, H: ByteHash> Content<H> for Option<T> {
 }
 
 impl<T: Content<H>, H: ByteHash> Content<H> for Box<T> {
-    type Leaf = ();
-
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         (**self).persist(sink)
     }
@@ -61,8 +45,6 @@ impl<T: Content<H>, H: ByteHash> Content<H> for Box<T> {
 }
 
 impl<H: ByteHash> Content<H> for () {
-    type Leaf = ();
-
     fn persist(&mut self, _: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }
@@ -73,8 +55,6 @@ impl<H: ByteHash> Content<H> for () {
 }
 
 impl<X: 'static, H: ByteHash> Content<H> for PhantomData<X> {
-    type Leaf = ();
-
     fn persist(&mut self, _: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }
@@ -84,8 +64,6 @@ impl<X: 'static, H: ByteHash> Content<H> for PhantomData<X> {
 }
 
 impl<H: ByteHash> Content<H> for u8 {
-    type Leaf = ();
-
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         sink.write(&[*self])?;
         Ok(())
@@ -99,8 +77,6 @@ impl<H: ByteHash> Content<H> for u8 {
 }
 
 impl<H: ByteHash> Content<H> for String {
-    type Leaf = ();
-
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         let bytes = self.as_bytes();
         sink.write_u64::<BigEndian>(bytes.len() as u64)?;
@@ -118,8 +94,6 @@ impl<H: ByteHash> Content<H> for String {
 }
 
 impl<H: ByteHash, T: Content<H>> Content<H> for Vec<T> {
-    type Leaf = ();
-
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         sink.write_u64::<BigEndian>(self.len() as u64)?;
         for t in self.iter_mut() {
@@ -142,8 +116,6 @@ impl<H: ByteHash, T: Content<H>> Content<H> for Vec<T> {
 macro_rules! number {
     ($t:ty : $read:ident, $write:ident) => {
         impl<H: ByteHash> Content<H> for $t {
-            type Leaf = ();
-
             fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
                 sink.$write::<BigEndian>(*self)
             }
@@ -171,8 +143,6 @@ where
     B: Content<H>,
     H: ByteHash,
 {
-    type Leaf = ();
-
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         self.0.persist(sink)?;
         self.1.persist(sink)
