@@ -5,13 +5,14 @@ use std::sync::Arc;
 use bytehash::ByteHash;
 use cache::Cached;
 
+use crate::compound::Compound;
 use crate::content::Content;
 use crate::sink::StoreSink;
 use crate::store::{Snapshot, Store};
 
 enum HandleInner<C, H>
 where
-    C: Content<H>,
+    C: Compound<H>,
     H: ByteHash,
 {
     Leaf(C::Leaf),
@@ -24,12 +25,12 @@ where
 #[derive(Clone)]
 pub struct Handle<C, H>(HandleInner<C, H>)
 where
-    C: Content<H>,
+    C: Compound<H>,
     H: ByteHash;
 
 pub enum HandleRef<'a, C, H>
 where
-    C: Content<H>,
+    C: Compound<H>,
     H: ByteHash,
 {
     Leaf(&'a C::Leaf),
@@ -39,7 +40,7 @@ where
 
 pub enum HandleMut<'a, C, H>
 where
-    C: Content<H>,
+    C: Compound<H>,
     H: ByteHash,
 {
     Leaf(&'a mut C::Leaf),
@@ -49,7 +50,7 @@ where
 
 pub enum HandleOwned<C, H>
 where
-    C: Content<H>,
+    C: Compound<H>,
     H: ByteHash,
 {
     Leaf(C::Leaf),
@@ -59,7 +60,7 @@ where
 
 impl<C, H> Default for Handle<C, H>
 where
-    C: Content<H>,
+    C: Compound<H>,
     H: ByteHash,
 {
     fn default() -> Self {
@@ -67,9 +68,30 @@ where
     }
 }
 
+impl<C, H> PartialEq for Handle<C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.0, &other.0) {
+            (HandleInner::None, HandleInner::None) => true,
+            (HandleInner::Leaf(a), HandleInner::Leaf(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl<C, H> Eq for Handle<C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+}
+
 impl<C, H> Clone for HandleInner<C, H>
 where
-    C: Content<H>,
+    C: Compound<H>,
     H: ByteHash,
 {
     fn clone(&self) -> Self {
@@ -89,29 +111,11 @@ where
 
 impl<C, H> Content<H> for Handle<C, H>
 where
-    C: Content<H>,
+    C: Compound<H>,
     H: ByteHash,
 {
-    type Leaf = ();
-
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
-        self.0.persist(sink)
-    }
-
-    fn restore(source: &mut dyn Read) -> io::Result<Self> {
-        Ok(Handle(HandleInner::restore(source)?))
-    }
-}
-
-impl<C, H> Content<H> for HandleInner<C, H>
-where
-    C: Content<H>,
-    H: ByteHash,
-{
-    type Leaf = ();
-
-    fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
-        match self {
+        match self.0 {
             HandleInner::Persisted(ref digest) => {
                 sink.write_all(&[0])?;
                 sink.write_all((**digest).as_ref())
@@ -131,11 +135,11 @@ where
             [0] => {
                 let mut h = H::Digest::default();
                 source.read(h.as_mut())?;
-                Ok(HandleInner::Persisted(Snapshot::new(h)))
+                Ok(Handle(HandleInner::Persisted(Snapshot::new(h))))
             }
             // We leave the rest of the bytes for future hash-function
             // upgrades
-            [255] => Ok(HandleInner::Leaf(C::Leaf::restore(source)?)),
+            [255] => Ok(Handle(HandleInner::Leaf(C::Leaf::restore(source)?))),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid Handle encoding",
@@ -146,15 +150,22 @@ where
 
 impl<C, H> Handle<C, H>
 where
-    C: Content<H>,
+    C: Compound<H>,
     H: ByteHash,
 {
     pub fn leaf(l: C::Leaf) -> Handle<C, H> {
         Handle(HandleInner::Leaf(l))
     }
 
-    pub fn node(n: C) -> Handle<C, H> {
-        Handle(HandleInner::Node(Box::new(n)))
+    pub fn node<I: Into<Box<C>>>(n: I) -> Handle<C, H> {
+        Handle(HandleInner::Node(n.into()))
+    }
+
+    pub fn is_none(&self) -> bool {
+        match self.0 {
+            HandleInner::None => true,
+            _ => false,
+        }
     }
 
     pub fn replace(&mut self, with: HandleOwned<C, H>) -> Option<C::Leaf> {
