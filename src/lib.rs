@@ -6,7 +6,6 @@ mod handle;
 mod iter;
 mod map;
 mod search;
-mod set;
 mod sink;
 mod source;
 mod store;
@@ -20,7 +19,7 @@ pub use crate::handle::{Handle, HandleMut, HandleOwned, HandleRef};
 pub use crate::iter::LeafIterable;
 pub use crate::map::{KeyValIterable, ValRef, ValRefMut};
 pub use crate::search::Method;
-pub use crate::set::Set;
+pub use crate::source::Source;
 pub use crate::store::{Shared, Store};
 
 // Re-export
