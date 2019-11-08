@@ -8,6 +8,7 @@ use cache::Cached;
 use crate::compound::Compound;
 use crate::content::Content;
 use crate::sink::StoreSink;
+use crate::source::Source;
 use crate::store::{Snapshot, Store};
 
 enum HandleInner<C, H>
@@ -128,14 +129,17 @@ where
         }
     }
 
-    fn restore(source: &mut dyn Read) -> io::Result<Self> {
+    fn restore(source: &mut Source<H>) -> io::Result<Self> {
         let mut tag = [0u8];
         source.read_exact(&mut tag)?;
         match tag {
             [0] => {
                 let mut h = H::Digest::default();
                 source.read(h.as_mut())?;
-                Ok(Handle(HandleInner::Persisted(Snapshot::new(h))))
+                Ok(Handle(HandleInner::Persisted(Snapshot::new(
+                    h,
+                    source.store(),
+                ))))
             }
             // We leave the rest of the bytes for future hash-function
             // upgrades
@@ -153,12 +157,26 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
-    pub fn leaf(l: C::Leaf) -> Handle<C, H> {
+    pub fn new_leaf(l: C::Leaf) -> Handle<C, H> {
         Handle(HandleInner::Leaf(l))
     }
 
-    pub fn node<I: Into<Box<C>>>(n: I) -> Handle<C, H> {
+    pub fn new_node<I: Into<Box<C>>>(n: I) -> Handle<C, H> {
         Handle(HandleInner::Node(n.into()))
+    }
+
+    pub fn leaf(&self) -> Option<&C::Leaf> {
+        match self.0 {
+            HandleInner::Leaf(ref leaf) => Some(leaf),
+            _ => None,
+        }
+    }
+
+    pub fn leaf_mut(&mut self) -> Option<&mut C::Leaf> {
+        match self.0 {
+            HandleInner::Leaf(ref mut leaf) => Some(leaf),
+            _ => None,
+        }
     }
 
     pub fn is_none(&self) -> bool {
@@ -210,7 +228,10 @@ where
             HandleInner::SharedNode(ref n) => {
                 HandleRef::Node(Cached::Borrowed(n.as_ref()))
             }
-            _ => unimplemented!(),
+            HandleInner::Persisted(ref snap) => {
+                let restored = snap.restore().unwrap();
+                HandleRef::Node(Cached::Spilled(Box::new(restored)))
+            }
         }
     }
 
@@ -239,7 +260,7 @@ where
             | HandleInner::None
             | HandleInner::Persisted(_) => return Ok(()),
         };
-        *self = Handle(HandleInner::Persisted(Snapshot::new(hash)));
+        *self = Handle(HandleInner::Persisted(Snapshot::new(hash, store)));
         Ok(())
     }
 

@@ -39,15 +39,21 @@ unsafe impl<T, H: ByteHash> Send for Shared<T, H> {}
 #[derive(Clone, Debug)]
 pub struct Snapshot<T, H: ByteHash> {
     hash: H::Digest,
+    store: Store<H>,
     _marker: PhantomData<T>,
 }
 
 impl<T: Compound<H>, H: ByteHash> Snapshot<T, H> {
-    pub(crate) fn new(hash: H::Digest) -> Self {
+    pub(crate) fn new(hash: H::Digest, store: &Store<H>) -> Self {
         Snapshot {
             hash,
+            store: store.clone(),
             _marker: PhantomData,
         }
+    }
+
+    pub(crate) fn restore(&self) -> io::Result<T> {
+        self.store.restore(self)
     }
 }
 
@@ -83,6 +89,7 @@ impl<H: ByteHash> Store<H> {
         compound.persist(&mut sink)?;
         Ok(Snapshot {
             hash: sink.fin()?,
+            store: self.clone(),
             _marker: PhantomData,
         })
     }

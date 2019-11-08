@@ -7,7 +7,7 @@ use cache::Cached;
 use smallvec::SmallVec;
 
 use crate::compound::Compound;
-use crate::handle::{Handle, HandleMut, HandleOwned, HandleRef};
+use crate::handle::{Handle, HandleMut, HandleRef};
 use crate::search::Method;
 
 // how deep the branch can be without allocating
@@ -105,7 +105,7 @@ where
             NodeRef::Cached(c) => InnerImmutable::Cached(c),
             NodeRef::Mutable(m) => InnerImmutable::Borrowed(m),
             NodeRef::Owned(o) => InnerImmutable::Borrowed(o),
-            NodeRef::Placeholder(_) => unreachable!(),
+            NodeRef::Placeholder(_) => unreachable!("Placeholder"),
         }
     }
 }
@@ -201,11 +201,11 @@ where
                 self.insert_child(node)
             }
             NodeRef::Owned(o) => {
-                (**o).children_mut()[self.ofs] = Handle::node(node)
+                (**o).children_mut()[self.ofs] = Handle::new_node(node)
             }
             NodeRef::Placeholder(_) => unreachable!(),
             NodeRef::Mutable(ref mut m) => {
-                m.children_mut()[self.ofs] = Handle::node(node)
+                m.children_mut()[self.ofs] = Handle::new_node(node)
             }
         }
     }
@@ -222,19 +222,17 @@ where
     }
 
     pub fn leaf(&self) -> Option<&C::Leaf> {
-        if let HandleRef::Leaf(ref l) = self.referencing() {
-            Some(l)
-        } else {
-            None
-        }
+        self.node
+            .children()
+            .get(self.ofs)
+            .and_then(|handle| handle.leaf())
     }
 
     pub fn leaf_mut(&'a mut self) -> Option<&'a mut C::Leaf> {
-        if let HandleMut::Leaf(l) = self.referencing_mut() {
-            Some(l)
-        } else {
-            None
-        }
+        self.node
+            .children_mut()
+            .get_mut(self.ofs)
+            .and_then(|handle| handle.leaf_mut())
     }
 
     pub fn referencing(&self) -> HandleRef<C, H> {

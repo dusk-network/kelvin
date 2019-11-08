@@ -5,7 +5,7 @@ use bytehash::ByteHash;
 
 use crate::branch::{Branch, BranchMut};
 use crate::compound::Compound;
-use crate::iter::{LeafIter, LeafIterMut, LeafIterable};
+use crate::iter::{LeafIter, LeafIterMut};
 use crate::search::{First, Method};
 
 pub trait KVPair<K, V>: Into<(K, V)> + From<(K, V)> {

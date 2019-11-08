@@ -4,12 +4,14 @@ use std::marker::PhantomData;
 use bytehash::ByteHash;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
+use crate::source::Source;
+
 pub trait Content<H: ByteHash>
 where
     Self: Sized + Clone + 'static + PartialEq + Eq,
 {
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()>;
-    fn restore(source: &mut dyn Read) -> io::Result<Self>;
+    fn restore(source: &mut Source<H>) -> io::Result<Self>;
 }
 
 impl<T: Content<H>, H: ByteHash> Content<H> for Option<T> {
@@ -23,7 +25,7 @@ impl<T: Content<H>, H: ByteHash> Content<H> for Option<T> {
         }
     }
 
-    fn restore(source: &mut dyn Read) -> io::Result<Self> {
+    fn restore(source: &mut Source<H>) -> io::Result<Self> {
         let mut byte = [0u8];
         source.read_exact(&mut byte)?;
         match byte[0] {
@@ -39,7 +41,7 @@ impl<T: Content<H>, H: ByteHash> Content<H> for Box<T> {
         (**self).persist(sink)
     }
 
-    fn restore(source: &mut dyn Read) -> io::Result<Self> {
+    fn restore(source: &mut Source<H>) -> io::Result<Self> {
         Ok(Box::new(T::restore(source)?))
     }
 }
@@ -49,7 +51,7 @@ impl<H: ByteHash> Content<H> for () {
         Ok(())
     }
 
-    fn restore(_: &mut dyn Read) -> io::Result<Self> {
+    fn restore(_: &mut Source<H>) -> io::Result<Self> {
         Ok(())
     }
 }
@@ -58,7 +60,7 @@ impl<X: 'static, H: ByteHash> Content<H> for PhantomData<X> {
     fn persist(&mut self, _: &mut dyn Write) -> io::Result<()> {
         Ok(())
     }
-    fn restore(_: &mut dyn Read) -> io::Result<Self> {
+    fn restore(_: &mut Source<H>) -> io::Result<Self> {
         Ok(::std::marker::PhantomData)
     }
 }
@@ -69,7 +71,7 @@ impl<H: ByteHash> Content<H> for u8 {
         Ok(())
     }
 
-    fn restore(source: &mut dyn Read) -> io::Result<Self> {
+    fn restore(source: &mut Source<H>) -> io::Result<Self> {
         let mut byte = [0u8];
         source.read_exact(&mut byte)?;
         Ok(byte[0])
@@ -84,7 +86,7 @@ impl<H: ByteHash> Content<H> for String {
         Ok(())
     }
 
-    fn restore(source: &mut dyn Read) -> io::Result<Self> {
+    fn restore(source: &mut Source<H>) -> io::Result<Self> {
         let byte_len = source.read_u64::<BigEndian>()?;
         let mut take = source.take(byte_len);
         let mut string = String::new();
@@ -102,7 +104,7 @@ impl<H: ByteHash, T: Content<H>> Content<H> for Vec<T> {
         Ok(())
     }
 
-    fn restore(source: &mut dyn Read) -> io::Result<Self> {
+    fn restore(source: &mut Source<H>) -> io::Result<Self> {
         let len = source.read_u64::<BigEndian>()?;
         let mut vec = Vec::with_capacity(len as usize);
         for _ in 0..len {
@@ -120,7 +122,7 @@ macro_rules! number {
                 sink.$write::<BigEndian>(*self)
             }
 
-            fn restore(source: &mut dyn Read) -> io::Result<Self> {
+            fn restore(source: &mut Source<H>) -> io::Result<Self> {
                 source.$read::<BigEndian>()
             }
         }
@@ -148,7 +150,7 @@ where
         self.1.persist(sink)
     }
 
-    fn restore(source: &mut dyn Read) -> io::Result<Self> {
+    fn restore(source: &mut Source<H>) -> io::Result<Self> {
         Ok((A::restore(source)?, B::restore(source)?))
     }
 }
