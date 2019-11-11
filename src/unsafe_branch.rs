@@ -8,7 +8,7 @@ use cache::Cached;
 use smallvec::SmallVec;
 
 use crate::compound::Compound;
-use crate::handle::{Handle, HandleMut, HandleRef};
+use crate::handle::{Handle, HandleRef};
 use crate::search::Method;
 
 // how deep the branch can be without allocating
@@ -74,30 +74,6 @@ where
                 }
             }
             NodeRef::Placeholder(_) => unreachable!(),
-        })
-    }
-
-    pub fn handle_mut(&mut self, idx: usize) -> io::Result<HandleMut<C, H>> {
-        Ok(match self {
-            NodeRef::Cached(c) => {
-                *self = NodeRef::Owned(Box::new(c.clone()));
-                self.handle_mut(idx)?
-            }
-            NodeRef::Mutable(m) => {
-                if let Some(handle) = m.children_mut().get_mut(idx) {
-                    handle.inner_mut()?
-                } else {
-                    HandleMut::None
-                }
-            }
-            NodeRef::Owned(o) => {
-                if let Some(handle) = (**o).children_mut().get_mut(idx) {
-                    handle.inner_mut()?
-                } else {
-                    HandleMut::None
-                }
-            }
-            _ => unreachable!(),
         })
     }
 
@@ -240,10 +216,6 @@ where
         self.node.handle(self.ofs)
     }
 
-    pub fn referencing_mut(&mut self) -> io::Result<HandleMut<C, H>> {
-        self.node.handle_mut(self.ofs)
-    }
-
     fn search<M: Method>(&mut self, method: &mut M) -> io::Result<Found> {
         let node = self.inner_immutable();
         let children = node.children();
@@ -263,10 +235,6 @@ where
             })
         }
     }
-
-    pub fn ofs(&self) -> usize {
-        self.ofs
-    }
 }
 
 impl<C, H> AsMut<C> for Level<'_, C, H>
@@ -283,11 +251,6 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
-    // Only used as temporary replacement
-    pub(crate) fn empty() -> Self {
-        UnsafeBranch(SmallVec::new())
-    }
-
     pub fn new_cached(node: Cached<'a, C>) -> Self {
         let mut vec = SmallVec::new();
         vec.push(Level::new_cached(node));

@@ -275,7 +275,7 @@ where
                 node.persist(&mut sink)?;
                 sink.fin()?
             }
-            HandleInner::SharedNode(ref mut arc) => unimplemented!(),
+            HandleInner::SharedNode(_) => unimplemented!(),
             HandleInner::Leaf(_)
             | HandleInner::None
             | HandleInner::Persisted(_) => {

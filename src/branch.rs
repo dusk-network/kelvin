@@ -1,4 +1,3 @@
-use std::mem;
 use std::ops::{Deref, DerefMut};
 
 use bytehash::ByteHash;
@@ -92,16 +91,6 @@ where
 
     pub fn last_node_mut(&mut self) -> &mut C {
         self.0.last_node_mut().expect("Invalid BranchMut")
-    }
-
-    fn into_inner(mut self) -> UnsafeBranch<'a, C, H> {
-        // This trick allows us to move self.0 out of the struct implementing Drop
-        self.0.relink();
-        mem::replace(&mut self.0, UnsafeBranch::empty())
-    }
-
-    fn valid(&self) -> bool {
-        self.0.leaf().is_some()
     }
 }
 
