@@ -1,3 +1,4 @@
+use std::io;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -60,16 +61,20 @@ where
     H: ByteHash,
     K: PartialEq + Eq,
 {
-    pub fn new<'m, M>(node: &'a C, method: &mut M, key: &K) -> Option<Self>
+    pub fn new<'m, M>(
+        node: &'a C,
+        method: &mut M,
+        key: &K,
+    ) -> io::Result<Option<Self>>
     where
         M: Method,
     {
-        Branch::new(node, method)
-            .filter(|b| b.key() == key)
-            .map(|branch| ValRef {
+        Ok(Branch::new(node, method)?.filter(|b| b.key() == key).map(
+            |branch| ValRef {
                 branch,
                 _marker: PhantomData,
-            })
+            },
+        ))
     }
 }
 
@@ -80,16 +85,20 @@ where
     H: ByteHash,
     K: PartialEq + Eq,
 {
-    pub fn new<'m, M>(node: &'a mut C, method: &mut M, key: &K) -> Option<Self>
+    pub fn new<'m, M>(
+        node: &'a mut C,
+        method: &mut M,
+        key: &K,
+    ) -> io::Result<Option<Self>>
     where
         M: Method,
     {
-        BranchMut::new(node, method)
+        Ok(BranchMut::new(node, method)?
             .filter(|b| b.key() == key)
             .map(|branch| ValRefMut {
                 branch,
                 _marker: PhantomData,
-            })
+            }))
     }
 }
 
@@ -193,10 +202,10 @@ where
     V: 'a,
     H: ByteHash,
 {
-    type Item = &'a V;
+    type Item = io::Result<&'a V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(KVPair::val)
+        self.0.next().map(|result| result.map(KVPair::val))
     }
 }
 
@@ -209,10 +218,10 @@ where
     V: 'a,
     H: ByteHash,
 {
-    type Item = &'a mut V;
+    type Item = io::Result<&'a mut V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(KVPair::val_mut)
+        self.0.next().map(|r| r.map(KVPair::val_mut))
     }
 }
 
@@ -225,9 +234,9 @@ where
     V: 'a,
     H: ByteHash,
 {
-    type Item = &'a K;
+    type Item = io::Result<&'a K>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(KVPair::key)
+        self.0.next().map(|result| result.map(KVPair::key))
     }
 }

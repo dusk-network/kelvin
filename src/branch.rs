@@ -1,3 +1,4 @@
+use std::io;
 use std::ops::{Deref, DerefMut};
 
 use bytehash::ByteHash;
@@ -15,27 +16,33 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
-    pub fn new<M: Method>(node: &'a C, method: &mut M) -> Option<Self>
+    pub fn new<M: Method>(
+        node: &'a C,
+        method: &mut M,
+    ) -> io::Result<Option<Self>>
     where
         M: Method,
     {
         let mut inner = UnsafeBranch::new_cached(Cached::Borrowed(node));
-        inner.search(method);
-        if inner.leaf().is_some() {
+        inner.search(method)?;
+        Ok(if inner.leaf().is_some() {
             Some(Branch(inner))
         } else {
             None
-        }
+        })
     }
 
-    pub fn search<M: Method>(mut self, method: &mut M) -> Option<Self> {
+    pub fn search<M: Method>(
+        mut self,
+        method: &mut M,
+    ) -> io::Result<Option<Self>> {
         self.0.advance();
-        self.0.search(method);
-        if self.0.leaf().is_some() {
+        self.0.search(method)?;
+        Ok(if self.0.leaf().is_some() {
             Some(self)
         } else {
             None
-        }
+        })
     }
 }
 
@@ -62,31 +69,34 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
-    pub fn new<M>(node: &'a mut C, method: &mut M) -> Option<Self>
+    pub fn new<M>(node: &'a mut C, method: &mut M) -> io::Result<Option<Self>>
     where
         M: Method,
     {
         let mut inner = UnsafeBranch::new_mutable(node);
-        inner.search(method);
-        if inner.leaf().is_some() {
+        inner.search(method)?;
+        Ok(if inner.leaf().is_some() {
             Some(BranchMut(inner))
         } else {
             None
-        }
+        })
     }
 
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    pub fn search<M: Method>(mut self, method: &mut M) -> Option<Self> {
+    pub fn search<M: Method>(
+        mut self,
+        method: &mut M,
+    ) -> io::Result<Option<Self>> {
         self.0.advance();
-        self.0.search(method);
-        if self.0.leaf().is_some() {
+        self.0.search(method)?;
+        Ok(if self.0.leaf().is_some() {
             Some(self)
         } else {
             None
-        }
+        })
     }
 
     pub fn last_node_mut(&mut self) -> &mut C {

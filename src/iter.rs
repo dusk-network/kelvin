@@ -1,4 +1,4 @@
-use std::mem;
+use std::{io, mem};
 
 use crate::branch::{Branch, BranchMut};
 use crate::compound::Compound;
@@ -21,24 +21,29 @@ where
     M: 'a + Method,
     H: ByteHash,
 {
-    type Item = &'a C::Leaf;
+    type Item = io::Result<&'a C::Leaf>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let old = mem::replace(self, LeafIter::Exhausted);
         match old {
             LeafIter::Initial(node, mut method) => {
                 match Branch::new(node, &mut method) {
-                    Some(branch) => {
+                    Ok(Some(branch)) => {
                         *self = LeafIter::Branch(branch, method);
                     }
-                    None => {
+                    Ok(None) => {
                         *self = LeafIter::Exhausted;
                     }
+                    Err(e) => return Some(Err(e)),
                 }
             }
             LeafIter::Branch(branch, mut method) => {
-                if let Some(branch) = branch.search(&mut method) {
-                    *self = LeafIter::Branch(branch, method)
+                match branch.search(&mut method) {
+                    Ok(Some(branch)) => {
+                        *self = LeafIter::Branch(branch, method)
+                    }
+                    Err(e) => return Some(Err(e)),
+                    _ => (),
                 }
             }
             LeafIter::Exhausted => return None,
@@ -47,7 +52,7 @@ where
         let self_unsafe: &'a mut Self = unsafe { mem::transmute(self) };
 
         match self_unsafe {
-            LeafIter::Branch(ref branch, _) => Some(&*branch),
+            LeafIter::Branch(ref branch, _) => Some(Ok(&*branch)),
             LeafIter::Initial(_, _) => unreachable!(),
             LeafIter::Exhausted => None,
         }
@@ -70,24 +75,29 @@ where
     M: 'a + Method,
     H: ByteHash,
 {
-    type Item = &'a mut C::Leaf;
+    type Item = io::Result<&'a mut C::Leaf>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let old = mem::replace(self, LeafIterMut::Exhausted);
         match old {
             LeafIterMut::Initial(node, mut method) => {
                 match BranchMut::new(node, &mut method) {
-                    Some(branch) => {
+                    Ok(Some(branch)) => {
                         *self = LeafIterMut::Branch(branch, method);
                     }
-                    None => {
+                    Ok(None) => {
                         *self = LeafIterMut::Exhausted;
                     }
+                    Err(e) => return Some(Err(e)),
                 }
             }
             LeafIterMut::Branch(branch, mut method) => {
-                if let Some(branch) = branch.search(&mut method) {
-                    *self = LeafIterMut::Branch(branch, method)
+                match branch.search(&mut method) {
+                    Ok(Some(branch)) => {
+                        *self = LeafIterMut::Branch(branch, method)
+                    }
+                    Err(e) => return Some(Err(e)),
+                    _ => (),
                 }
             }
             LeafIterMut::Exhausted => return None,
@@ -96,7 +106,7 @@ where
         let self_unsafe: &'a mut Self = unsafe { mem::transmute(self) };
 
         match self_unsafe {
-            LeafIterMut::Branch(ref mut branch, _) => Some(&mut *branch),
+            LeafIterMut::Branch(ref mut branch, _) => Some(Ok(&mut *branch)),
             LeafIterMut::Initial(_, _) => unreachable!(),
             LeafIterMut::Exhausted => None,
         }
