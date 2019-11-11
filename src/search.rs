@@ -1,5 +1,5 @@
 use crate::compound::Compound;
-use crate::handle::{Handle, HandleRef};
+use crate::handle::{Handle, HandleType};
 use crate::ByteHash;
 
 pub trait Method: Clone {
@@ -19,9 +19,9 @@ impl Method for First {
         H: ByteHash,
     {
         for (i, h) in handles.iter().enumerate() {
-            match h.inner() {
-                HandleRef::Leaf(_) | HandleRef::Node(_) => return Some(i),
-                HandleRef::None => (),
+            match h.handle_type() {
+                HandleType::Leaf | HandleType::Node => return Some(i),
+                HandleType::None => (),
             }
         }
         None
