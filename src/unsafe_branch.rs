@@ -1,3 +1,4 @@
+use std::io;
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Deref, DerefMut};
@@ -49,55 +50,55 @@ where
         NodeRef::Mutable(node)
     }
 
-    pub fn handle(&self, idx: usize) -> HandleRef<C, H> {
-        match self {
+    pub fn handle(&self, idx: usize) -> io::Result<HandleRef<C, H>> {
+        Ok(match self {
             NodeRef::Cached(ref c) => {
                 if let Some(handle) = c.children().get(idx) {
-                    handle.inner()
+                    handle.inner()?
                 } else {
                     HandleRef::None
                 }
             }
             NodeRef::Mutable(m) => {
                 if let Some(handle) = m.children().get(idx) {
-                    handle.inner()
+                    handle.inner()?
                 } else {
                     HandleRef::None
                 }
             }
             NodeRef::Owned(o) => {
                 if let Some(handle) = (**o).children().get(idx) {
-                    handle.inner()
+                    handle.inner()?
                 } else {
                     HandleRef::None
                 }
             }
             NodeRef::Placeholder(_) => unreachable!(),
-        }
+        })
     }
 
-    pub fn handle_mut(&mut self, idx: usize) -> HandleMut<C, H> {
-        match self {
+    pub fn handle_mut(&mut self, idx: usize) -> io::Result<HandleMut<C, H>> {
+        Ok(match self {
             NodeRef::Cached(c) => {
                 *self = NodeRef::Owned(Box::new(c.clone()));
-                self.handle_mut(idx)
+                self.handle_mut(idx)?
             }
             NodeRef::Mutable(m) => {
                 if let Some(handle) = m.children_mut().get_mut(idx) {
-                    handle.inner_mut()
+                    handle.inner_mut()?
                 } else {
                     HandleMut::None
                 }
             }
             NodeRef::Owned(o) => {
                 if let Some(handle) = (**o).children_mut().get_mut(idx) {
-                    handle.inner_mut()
+                    handle.inner_mut()?
                 } else {
                     HandleMut::None
                 }
             }
             _ => unreachable!(),
-        }
+        })
     }
 
     pub fn inner_immutable(&self) -> InnerImmutable<C> {
@@ -235,31 +236,31 @@ where
             .and_then(|handle| handle.leaf_mut())
     }
 
-    pub fn referencing(&self) -> HandleRef<C, H> {
+    pub fn referencing(&self) -> io::Result<HandleRef<C, H>> {
         self.node.handle(self.ofs)
     }
 
-    pub fn referencing_mut(&mut self) -> HandleMut<C, H> {
+    pub fn referencing_mut(&mut self) -> io::Result<HandleMut<C, H>> {
         self.node.handle_mut(self.ofs)
     }
 
-    fn search<M: Method>(&mut self, method: &mut M) -> Found {
+    fn search<M: Method>(&mut self, method: &mut M) -> io::Result<Found> {
         let node = self.inner_immutable();
         let children = node.children();
         if self.ofs > children.len() - 1 {
-            return Found::Nothing;
+            return Ok(Found::Nothing);
         } else {
-            match method.select(&children[self.ofs..]) {
+            Ok(match method.select(&children[self.ofs..]) {
                 Some(i) => {
                     self.ofs += i;
-                    match self.referencing() {
+                    match self.referencing()? {
                         HandleRef::Leaf(_) => Found::Leaf,
                         HandleRef::Node(_) => Found::Node,
                         HandleRef::None => Found::Nothing,
                     }
                 }
                 None => Found::Nothing,
-            }
+            })
         }
     }
 
@@ -303,15 +304,15 @@ where
         UnsafeBranch(vec)
     }
 
-    pub fn search<M: Method>(&mut self, method: &mut M) {
+    pub fn search<M: Method>(&mut self, method: &mut M) -> io::Result<()> {
         loop {
             if let Some(last) = self.0.last_mut() {
                 let mut push = None;
-                match last.search(method) {
+                match last.search(method)? {
                     Found::Leaf => {
                         break;
                     }
-                    Found::Node => match last.referencing() {
+                    Found::Node => match last.referencing()? {
                         HandleRef::Node(cached) => {
                             let level: Level<'a, _, _> = unsafe {
                                 mem::transmute(Level::new_cached(cached))
@@ -336,6 +337,7 @@ where
                 break;
             }
         }
+        Ok(())
     }
 
     pub fn advance(&mut self) {

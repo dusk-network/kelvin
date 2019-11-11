@@ -23,6 +23,12 @@ where
     None,
 }
 
+pub enum HandleType {
+    None,
+    Leaf,
+    Node,
+}
+
 #[derive(Clone)]
 pub struct Handle<C, H>(HandleInner<C, H>)
 where
@@ -117,15 +123,18 @@ where
 {
     fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
         match self.0 {
-            HandleInner::Persisted(ref digest) => {
-                sink.write_all(&[0])?;
-                sink.write_all((**digest).as_ref())
-            }
+            HandleInner::None => sink.write_all(&[0]),
             HandleInner::Leaf(ref mut leaf) => {
-                sink.write_all(&[255])?;
+                sink.write_all(&[1])?;
                 leaf.persist(sink)
             }
-            _ => panic!("Attempt at persisting a non-hash Handle"),
+            HandleInner::Persisted(ref digest) => {
+                sink.write_all(&[2])?;
+                sink.write_all((**digest).as_ref())
+            }
+            HandleInner::SharedNode(_) => unimplemented!(),
+            // Pre-persist handles this case
+            HandleInner::Node(_) => unreachable!(),
         }
     }
 
@@ -133,7 +142,9 @@ where
         let mut tag = [0u8];
         source.read_exact(&mut tag)?;
         match tag {
-            [0] => {
+            [0] => Ok(Handle(HandleInner::None)),
+            [1] => Ok(Handle(HandleInner::Leaf(C::Leaf::restore(source)?))),
+            [2] => {
                 let mut h = H::Digest::default();
                 source.read(h.as_mut())?;
                 Ok(Handle(HandleInner::Persisted(Snapshot::new(
@@ -141,9 +152,6 @@ where
                     source.store(),
                 ))))
             }
-            // We leave the rest of the bytes for future hash-function
-            // upgrades
-            [255] => Ok(Handle(HandleInner::Leaf(C::Leaf::restore(source)?))),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid Handle encoding",
@@ -186,6 +194,14 @@ where
         }
     }
 
+    pub fn handle_type(&self) -> HandleType {
+        match self.0 {
+            HandleInner::None => HandleType::None,
+            HandleInner::Leaf(_) => HandleType::Leaf,
+            _ => HandleType::Node,
+        }
+    }
+
     pub fn replace(&mut self, with: HandleOwned<C, H>) -> Option<C::Leaf> {
         match with {
             HandleOwned::None => {
@@ -218,8 +234,8 @@ where
         }
     }
 
-    pub fn inner(&self) -> HandleRef<C, H> {
-        match self.0 {
+    pub fn inner(&self) -> io::Result<HandleRef<C, H>> {
+        Ok(match self.0 {
             HandleInner::None => HandleRef::None,
             HandleInner::Leaf(ref l) => HandleRef::Leaf(l),
             HandleInner::Node(ref n) => {
@@ -229,36 +245,43 @@ where
                 HandleRef::Node(Cached::Borrowed(n.as_ref()))
             }
             HandleInner::Persisted(ref snap) => {
-                let restored = snap.restore().unwrap();
+                let restored = snap.restore()?;
                 HandleRef::Node(Cached::Spilled(Box::new(restored)))
             }
-        }
+        })
     }
 
-    pub fn inner_mut(&mut self) -> HandleMut<C, H> {
-        match self.0 {
+    pub fn inner_mut(&mut self) -> io::Result<HandleMut<C, H>> {
+        Ok(match self.0 {
             HandleInner::None => HandleMut::None,
             HandleInner::Leaf(ref mut l) => HandleMut::Leaf(l),
             HandleInner::Node(ref mut n) => HandleMut::Node(n.as_mut()),
+            HandleInner::Persisted(ref snapshot) => {
+                let restored = snapshot.restore()?;
+                *self = Handle(HandleInner::Node(Box::new(restored)));
+                self.inner_mut()?
+            }
             _ => unimplemented!(),
-        }
+        })
     }
 
-    pub fn pre_persist(&mut self, store: &Store<H>) -> io::Result<()> {
+    pub(crate) fn pre_persist(&mut self, store: &Store<H>) -> io::Result<()> {
         let hash = match &mut self.0 {
             HandleInner::Node(node) => {
+                for child in node.children_mut() {
+                    child.pre_persist(store)?;
+                }
                 let mut sink = StoreSink::new(store);
                 node.persist(&mut sink)?;
                 sink.fin()?
             }
-            HandleInner::SharedNode(ref mut arc) => {
-                let mut sink = StoreSink::new(store);
-                Arc::make_mut(arc).persist(&mut sink)?;
-                sink.fin()?
-            }
+            HandleInner::SharedNode(ref mut arc) => unimplemented!(),
             HandleInner::Leaf(_)
             | HandleInner::None
-            | HandleInner::Persisted(_) => return Ok(()),
+            | HandleInner::Persisted(_) => {
+                // no pre-persist needed
+                return Ok(());
+            }
         };
         *self = Handle(HandleInner::Persisted(Snapshot::new(hash, store)));
         Ok(())
