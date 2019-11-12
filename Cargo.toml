@@ -1,8 +1,8 @@
 [package]
 authors = ["Kristoffer Ström <kristoffer@dusk.network>"]
 edition = "2018"
-name = "cryogen"
-repository = "https://github.com/dusk-network/cryogen"
+name = "kelvin"
+repository = "https://github.com/dusk-network/kelvin"
 description = "Merkle tree tooklit and backend"
 tags = ["merkle", "datastructure", "database"]
 version = "0.1.0"
