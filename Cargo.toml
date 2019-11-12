@@ -14,8 +14,13 @@ parking_lot = "0.6.4"
 tempfile = "3.0.3"
 appendix = "0.1"
 smallvec = "0.6"
+seahash = "3.0"
 
 [dependencies.byteorder]
 features = ["i128"]
 version = "1.2.2"
 
+[dev-dependencies]
+tempfile = "3.0"
+rand = "0.6.5"
+quickcheck = "0.8"
