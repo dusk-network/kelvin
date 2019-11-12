@@ -1,8 +1,12 @@
 [package]
-authors = ["Kristoffer Ström <kristoffer@rymdkoloni.se>"]
+authors = ["Kristoffer Ström <kristoffer@dusk.network>"]
 edition = "2018"
 name = "cryogen"
-version = "0.2.0"
+repository = "https://github.com/dusk-network/cryogen"
+description = "Merkle tree tooklit and backend"
+tags = ["merkle", "datastructure", "database"]
+version = "0.1.0"
+license = "MPL-2.0"
 
 [dependencies]
 arrayvec = "0.4.10"
