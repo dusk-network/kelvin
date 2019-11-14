@@ -14,7 +14,7 @@ impl<'a, H: ByteHash> Source<'a, H> {
         Source { read, store }
     }
 
-    pub fn store(&self) -> &Store<H> {
+    pub(crate) fn store(&self) -> &Store<H> {
         &self.store
     }
 }

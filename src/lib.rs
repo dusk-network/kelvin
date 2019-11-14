@@ -21,17 +21,21 @@ pub use crate::handle::{
     Handle, HandleMut, HandleOwned, HandleRef, HandleType,
 };
 pub use crate::iter::LeafIterable;
-pub use crate::map::{KeyValIterable, ValRef, ValRefMut};
+pub use crate::map::{KeyValIterable, ValPath, ValPathMut, ValRef, ValRefMut};
 pub use crate::search::Method;
 pub use crate::source::Source;
 pub use crate::store::{Shared, Store};
 
-// test infra
-#[cfg(test)]
-pub use tests::quickcheck_map;
+// Re-export
+pub use bytehash::{Blake2b, ByteHash};
 
 // structures
 pub use structures::HAMT;
 
-// Re-export
-pub use bytehash::{Blake2b, ByteHash};
+// default types
+
+pub type Map<K, V> = HAMT<(K, V), Blake2b>;
+
+// test infra
+#[cfg(test)]
+pub use tests::quickcheck_map;

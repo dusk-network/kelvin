@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use bytehash::ByteHash;
+use owning_ref::{OwningRef, OwningRefMut};
 
 use crate::branch::{Branch, BranchMut};
 use crate::compound::Compound;
@@ -34,7 +35,7 @@ impl<K, V> KVPair<K, V> for (K, V) {
     }
 }
 
-pub struct ValRef<'a, K, V, C, H>
+pub struct ValPath<'a, K, V, C, H>
 where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
@@ -44,7 +45,7 @@ where
     _marker: PhantomData<(K, V)>,
 }
 
-pub struct ValRefMut<'a, K, V, C, H>
+pub struct ValPathMut<'a, K, V, C, H>
 where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
@@ -54,7 +55,7 @@ where
     _marker: PhantomData<(K, V)>,
 }
 
-impl<'a, K, V, C, H> ValRef<'a, K, V, C, H>
+impl<'a, K, V, C, H> ValPath<'a, K, V, C, H>
 where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
@@ -70,7 +71,7 @@ where
         M: Method,
     {
         Ok(Branch::new(node, method)?.filter(|b| b.key() == key).map(
-            |branch| ValRef {
+            |branch| ValPath {
                 branch,
                 _marker: PhantomData,
             },
@@ -78,7 +79,7 @@ where
     }
 }
 
-impl<'a, K, V, C, H> ValRefMut<'a, K, V, C, H>
+impl<'a, K, V, C, H> ValPathMut<'a, K, V, C, H>
 where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
@@ -95,14 +96,14 @@ where
     {
         Ok(BranchMut::new(node, method)?
             .filter(|b| b.key() == key)
-            .map(|branch| ValRefMut {
+            .map(|branch| ValPathMut {
                 branch,
                 _marker: PhantomData,
             }))
     }
 }
 
-impl<'a, K, V, C, H> Deref for ValRef<'a, K, V, C, H>
+impl<'a, K, V, C, H> Deref for ValPath<'a, K, V, C, H>
 where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
@@ -115,7 +116,7 @@ where
     }
 }
 
-impl<'a, K, V, C, H> Deref for ValRefMut<'a, K, V, C, H>
+impl<'a, K, V, C, H> Deref for ValPathMut<'a, K, V, C, H>
 where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
@@ -128,7 +129,7 @@ where
     }
 }
 
-impl<'a, K, V, C, H> DerefMut for ValRefMut<'a, K, V, C, H>
+impl<'a, K, V, C, H> DerefMut for ValPathMut<'a, K, V, C, H>
 where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
@@ -239,4 +240,36 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(|result| result.map(KVPair::key))
     }
+}
+
+pub trait ValRef<'a, V>: Deref<Target = V> + 'a
+where
+    Self: Sized,
+{
+    fn wrap<V2, F>(self, f: F) -> OwningRef<Box<Self>, V2>
+    where
+        V2: 'a,
+        F: FnOnce(&Self) -> &V2,
+    {
+        OwningRef::new(Box::new(self)).map(f)
+    }
+}
+impl<'a, T, V> ValRef<'a, V> for T where T: Deref<Target = V> + 'a {}
+
+pub trait ValRefMut<'a, V>: DerefMut<Target = V> + 'a
+where
+    Self: Sized,
+{
+    fn wrap_mut<V2, F>(self, f: F) -> OwningRefMut<Box<Self>, V2>
+    where
+        V2: 'a,
+        F: FnOnce(&mut Self) -> &mut V2,
+    {
+        OwningRefMut::new(Box::new(self)).map_mut(f)
+    }
+}
+
+impl<'a, T, V> ValRefMut<'a, V> for T where
+    T: Deref<Target = V> + 'a + DerefMut + 'a
+{
 }

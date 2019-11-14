@@ -4,7 +4,7 @@ use std::mem;
 
 use crate::{
     Compound, Content, Handle, HandleMut, HandleOwned, HandleRef, HandleType,
-    Method, Source, ValRef, ValRefMut,
+    Method, Source, ValPath, ValPathMut, ValRef, ValRefMut,
 };
 use bytehash::ByteHash;
 use seahash::SeaHasher;
@@ -122,15 +122,15 @@ where
         })
     }
 
-    pub fn get(&self, k: &K) -> io::Result<Option<ValRef<K, V, Self, H>>> {
-        ValRef::new(self, &mut HAMTSearch::from(&k), k)
+    pub fn get(&self, k: &K) -> io::Result<Option<impl ValRef<V>>> {
+        ValPath::new(self, &mut HAMTSearch::from(&k), k)
     }
 
-    pub fn get_mut(
-        &mut self,
+    pub fn get_mut<'a>(
+        &'a mut self,
         k: &K,
-    ) -> io::Result<Option<ValRefMut<K, V, Self, H>>> {
-        ValRefMut::new(self, &mut HAMTSearch::from(&k), k)
+    ) -> io::Result<Option<impl ValRefMut<V>>> {
+        ValPathMut::new(self, &mut HAMTSearch::from(&k), k)
     }
 
     pub fn remove(&mut self, k: &K) -> io::Result<Option<V>> {
@@ -294,6 +294,28 @@ mod test {
         for i in 0..1000 {
             h.insert(i, i).unwrap();
             assert_eq!(*h.get(&i).unwrap().unwrap(), i);
+        }
+    }
+
+    #[test]
+    fn nested_maps() {
+        let mut map_a = HAMT::<_, Blake2b>::new();
+        for i in 0..100 {
+            let mut map_b = HAMT::<_, Blake2b>::new();
+
+            for o in 0..100 {
+                map_b.insert(o, o).unwrap();
+            }
+
+            map_a.insert(i, map_b).unwrap();
+        }
+
+        for i in 0..100 {
+            let map_b = map_a.get(&i).unwrap().unwrap();
+
+            for o in 0..100 {
+                assert_eq!(*map_b.get(&o).unwrap().unwrap(), o);
+            }
         }
     }
 
