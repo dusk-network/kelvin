@@ -4,7 +4,7 @@ use std::mem;
 
 use crate::{
     Compound, Content, Handle, HandleMut, HandleOwned, HandleRef, HandleType,
-    Method, Source, ValPath, ValPathMut, ValRef, ValRefMut,
+    Method, Sink, Source, ValPath, ValPathMut, ValRef, ValRefMut,
 };
 use bytehash::ByteHash;
 use seahash::SeaHasher;
@@ -226,7 +226,7 @@ where
     L: Content<H>,
     H: ByteHash,
 {
-    fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
+    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
         debug_assert!(N_BUCKETS == 16);
         let mut mask = 0u16;
         for i in 0..N_BUCKETS {

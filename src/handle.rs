@@ -7,7 +7,7 @@ use cache::Cached;
 
 use crate::compound::Compound;
 use crate::content::Content;
-use crate::sink::StoreSink;
+use crate::sink::Sink;
 use crate::source::Source;
 use crate::store::{Snapshot, Store};
 
@@ -121,7 +121,7 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
-    fn persist(&mut self, sink: &mut dyn Write) -> io::Result<()> {
+    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
         match self.0 {
             HandleInner::None => sink.write_all(&[0]),
             HandleInner::Leaf(ref mut leaf) => {
@@ -271,7 +271,7 @@ where
                 for child in node.children_mut() {
                     child.pre_persist(store)?;
                 }
-                let mut sink = StoreSink::new(store);
+                let mut sink = Sink::new(store);
                 node.persist(&mut sink)?;
                 sink.fin()?
             }

@@ -12,7 +12,7 @@ use parking_lot::RwLock;
 use crate::backend::{Backend, MemBackend, PutResult};
 use crate::compound::Compound;
 use crate::handle::Handle;
-use crate::sink::StoreSink;
+use crate::sink::Sink;
 use crate::source::Source;
 
 #[derive(Clone)]
@@ -85,7 +85,7 @@ impl<H: ByteHash> Store<H> {
             c.pre_persist(self)?;
         }
 
-        let mut sink = StoreSink::new(self);
+        let mut sink = Sink::new(self);
         compound.persist(&mut sink)?;
         Ok(Snapshot {
             hash: sink.fin()?,
