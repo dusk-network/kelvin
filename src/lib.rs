@@ -23,6 +23,7 @@ pub use crate::handle::{
 pub use crate::iter::LeafIterable;
 pub use crate::map::{KeyValIterable, ValPath, ValPathMut, ValRef, ValRefMut};
 pub use crate::search::Method;
+pub use crate::sink::Sink;
 pub use crate::source::Source;
 pub use crate::store::{Shared, Store};
 
