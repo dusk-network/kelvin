@@ -9,7 +9,7 @@ use crate::compound::Compound;
 use crate::content::Content;
 use crate::sink::Sink;
 use crate::source::Source;
-use crate::store::{Snapshot, Store};
+use crate::store::Snapshot;
 
 enum HandleInner<C, H>
 where
@@ -23,45 +23,62 @@ where
     None,
 }
 
+/// Represents the type of the handle
 pub enum HandleType {
+    /// Empty handle
     None,
+    /// Leaf handle
     Leaf,
+    /// Node handle
     Node,
 }
 
+/// The user-facing type for handles, the main type to build trees
 #[derive(Clone)]
 pub struct Handle<C, H>(HandleInner<C, H>)
 where
     C: Compound<H>,
     H: ByteHash;
 
+/// User facing reference to a handle
 pub enum HandleRef<'a, C, H>
 where
     C: Compound<H>,
     H: ByteHash,
 {
+    /// Handle points at a Leaf
     Leaf(&'a C::Leaf),
+    /// Handle points at a cached Node
     Node(Cached<'a, C>),
+    /// Handle points at nothing
     None,
 }
 
+/// User facing mutable reference to a handle
 pub enum HandleMut<'a, C, H>
 where
     C: Compound<H>,
     H: ByteHash,
 {
+    /// Handle points at a Leaf
     Leaf(&'a mut C::Leaf),
+    /// Handle points at a Node
     Node(&'a mut C),
+    /// Handle points at nothing
     None,
 }
 
+/// An owned handle
 pub enum HandleOwned<C, H>
 where
     C: Compound<H>,
     H: ByteHash,
 {
+    /// Owned Leaf
     Leaf(C::Leaf),
+    /// Owned Node
     Node(C),
+    /// None
     None,
 }
 
@@ -132,9 +149,14 @@ where
                 sink.write_all(&[2])?;
                 sink.write_all((**digest).as_ref())
             }
+            HandleInner::Node(ref mut node) => {
+                let snap = sink.store().persist(&mut **node)?;
+                let digest = *snap;
+                self.0 = HandleInner::Persisted(snap);
+                sink.write_all(&[2])?;
+                sink.write_all(digest.as_ref())
+            }
             HandleInner::SharedNode(_) => unimplemented!(),
-            // Pre-persist handles this case
-            HandleInner::Node(_) => unreachable!(),
         }
     }
 
@@ -165,14 +187,17 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
+    /// Constructs a new leaf Handle
     pub fn new_leaf(l: C::Leaf) -> Handle<C, H> {
         Handle(HandleInner::Leaf(l))
     }
 
+    /// Constructs a new node Handle
     pub fn new_node<I: Into<Box<C>>>(n: I) -> Handle<C, H> {
         Handle(HandleInner::Node(n.into()))
     }
 
+    /// Returns a reference to contained leaf, if any
     pub fn leaf(&self) -> Option<&C::Leaf> {
         match self.0 {
             HandleInner::Leaf(ref leaf) => Some(leaf),
@@ -180,6 +205,7 @@ where
         }
     }
 
+    /// Returns a mutable reference to contained leaf, if any
     pub fn leaf_mut(&mut self) -> Option<&mut C::Leaf> {
         match self.0 {
             HandleInner::Leaf(ref mut leaf) => Some(leaf),
@@ -187,6 +213,7 @@ where
         }
     }
 
+    /// Returns true if the Handle is pointing to nothing
     pub fn is_none(&self) -> bool {
         match self.0 {
             HandleInner::None => true,
@@ -194,6 +221,7 @@ where
         }
     }
 
+    /// Returns the type of the Handle
     pub fn handle_type(&self) -> HandleType {
         match self.0 {
             HandleInner::None => HandleType::None,
@@ -202,6 +230,7 @@ where
         }
     }
 
+    /// Replace the handle with an owned one, returning the leaf if any
     pub fn replace(&mut self, with: HandleOwned<C, H>) -> Option<C::Leaf> {
         match with {
             HandleOwned::None => {
@@ -234,6 +263,7 @@ where
         }
     }
 
+    /// Returns a HandleRef from the Handle
     pub fn inner(&self) -> io::Result<HandleRef<C, H>> {
         Ok(match self.0 {
             HandleInner::None => HandleRef::None,
@@ -251,6 +281,7 @@ where
         })
     }
 
+    /// Returns a HandleRefMut from the Handle
     pub fn inner_mut(&mut self) -> io::Result<HandleMut<C, H>> {
         Ok(match self.0 {
             HandleInner::None => HandleMut::None,
@@ -265,28 +296,7 @@ where
         })
     }
 
-    pub(crate) fn pre_persist(&mut self, store: &Store<H>) -> io::Result<()> {
-        let hash = match &mut self.0 {
-            HandleInner::Node(node) => {
-                for child in node.children_mut() {
-                    child.pre_persist(store)?;
-                }
-                let mut sink = Sink::new(store);
-                node.persist(&mut sink)?;
-                sink.fin()?
-            }
-            HandleInner::SharedNode(_) => unimplemented!(),
-            HandleInner::Leaf(_)
-            | HandleInner::None
-            | HandleInner::Persisted(_) => {
-                // no pre-persist needed
-                return Ok(());
-            }
-        };
-        *self = Handle(HandleInner::Persisted(Snapshot::new(hash, store)));
-        Ok(())
-    }
-
+    #[doc(hidden)]
     pub fn make_shared(&mut self) {
         if let HandleInner::Node(_) = self.0 {
             if let HandleInner::Node(node) =

@@ -5,6 +5,7 @@ use crate::compound::Compound;
 use crate::search::{First, Method};
 use crate::ByteHash;
 
+/// An iterator over the leaves of a Compound type
 pub enum LeafIter<'a, C, M, H>
 where
     C: Compound<H>,
@@ -113,12 +114,15 @@ where
     }
 }
 
+/// Trait for iterating over the leaves of a Compuond
 pub trait LeafIterable<H>
 where
     Self: Compound<H>,
     H: ByteHash,
 {
+    /// Returns an iterator over the leaves of the Compound
     fn iter(&self) -> LeafIter<Self, First, H>;
+    /// Returns an iterator over the mutable leaves of the Compound
     fn iter_mut(&mut self) -> LeafIterMut<Self, First, H>;
 }
 

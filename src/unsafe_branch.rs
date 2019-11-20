@@ -257,10 +257,6 @@ where
         UnsafeBranch(vec)
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
     pub fn new_mutable(node: &'a mut C) -> Self {
         let mut vec = SmallVec::new();
         vec.push(Level::new_mutable(node));
@@ -313,10 +309,6 @@ where
         } else {
             None
         }
-    }
-
-    pub fn last_node_mut(&mut self) -> Option<&mut C> {
-        self.0.last_mut().map(|last| &mut *last.node)
     }
 
     pub(crate) fn leaf_mut(&mut self) -> Option<&'a mut C::Leaf> {

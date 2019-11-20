@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 
 use crate::backend::{Backend, PutResult};
 
+/// A backend that stores its data in an `appendix` index, and a flat file
 pub struct DiskBackend<H: ByteHash> {
     index: Index<H::Digest, u64>,
     data: UnsafeCell<File>,
@@ -20,6 +21,7 @@ unsafe impl<H: ByteHash> Send for DiskBackend<H> {}
 unsafe impl<H: ByteHash> Sync for DiskBackend<H> {}
 
 impl<H: ByteHash> DiskBackend<H> {
+    /// Create a new DiskBackend at given path, creates a new directory if neccesary
     pub fn new<P: Into<PathBuf>>(path: P) -> io::Result<Self> {
         let dir = path.into();
         let index_dir = dir.join("index");

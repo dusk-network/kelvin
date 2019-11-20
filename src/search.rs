@@ -2,7 +2,9 @@ use crate::compound::Compound;
 use crate::handle::{Handle, HandleType};
 use crate::ByteHash;
 
+/// Trait for searching through tree structured data
 pub trait Method: Clone {
+    /// Select among the handles of the node
     fn select<C, H>(&mut self, handles: &[Handle<C, H>]) -> Option<usize>
     where
         C: Compound<H>,

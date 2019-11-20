@@ -8,7 +8,8 @@ use crate::compound::Compound;
 use crate::search::Method;
 use crate::unsafe_branch::UnsafeBranch;
 
-/// The Branch wrapper is guaranteed to always point to a leaf
+/// A branch into a `Compound<H>`
+/// The Branch is guaranteed to always point to a leaf
 pub struct Branch<'a, C, H>(UnsafeBranch<'a, C, H>);
 
 impl<'a, C, H> Branch<'a, C, H>
@@ -16,6 +17,7 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
+    /// Attempt to construct a branch with the given search method
     pub fn new<M: Method>(
         node: &'a C,
         method: &mut M,
@@ -32,6 +34,9 @@ where
         })
     }
 
+    /// Search for the next value in the branch, using `method`
+    ///
+    /// Takes self by value, and returns the updated branch or `None`
     pub fn search<M: Method>(
         mut self,
         method: &mut M,
@@ -58,7 +63,8 @@ where
     }
 }
 
-/// The BranchMut wrapper is guaranteed to always point to a leaf
+/// A mutable branch into a `Compound<H>`
+/// The BranchMut is guaranteed to always point to a leaf
 pub struct BranchMut<'a, C, H>(UnsafeBranch<'a, C, H>)
 where
     C: Compound<H>,
@@ -69,6 +75,7 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
+    ///
     pub fn new<M>(node: &'a mut C, method: &mut M) -> io::Result<Option<Self>>
     where
         M: Method,
@@ -82,10 +89,9 @@ where
         })
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
+    /// Search for the next value in the branch, using `method`
+    ///
+    /// Takes self by value, and returns the updated branch or `None`
     pub fn search<M: Method>(
         mut self,
         method: &mut M,
@@ -97,10 +103,6 @@ where
         } else {
             None
         })
-    }
-
-    pub fn last_node_mut(&mut self) -> &mut C {
-        self.0.last_node_mut().expect("Invalid BranchMut")
     }
 }
 

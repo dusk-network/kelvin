@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io;
 use std::iter::Iterator;
 use std::mem;
 
@@ -12,6 +12,7 @@ use std::hash::{Hash, Hasher};
 
 const N_BUCKETS: usize = 16;
 
+/// A hash array mapped trie
 #[derive(Clone, PartialEq, Eq)]
 pub struct HAMT<L, H: ByteHash>([Handle<Self, H>; N_BUCKETS])
 where
@@ -78,10 +79,12 @@ where
     V: Content<H>,
     H: ByteHash,
 {
+    /// Creates a new HAMT
     pub fn new() -> Self {
         HAMT(Default::default())
     }
 
+    /// Insert key-value pair into the HAMT, optionally returning expelled value
     pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
         self.sub_insert(0, hash(&k), k, v)
     }
@@ -122,10 +125,12 @@ where
         })
     }
 
+    /// Returns a reference to a value in the map, if any
     pub fn get(&self, k: &K) -> io::Result<Option<impl ValRef<V>>> {
         ValPath::new(self, &mut HAMTSearch::from(&k), k)
     }
 
+    /// Returns a reference to a mutable value in the map, if any
     pub fn get_mut<'a>(
         &'a mut self,
         k: &K,
@@ -133,6 +138,7 @@ where
         ValPathMut::new(self, &mut HAMTSearch::from(&k), k)
     }
 
+    /// Remove element with given key, returning it.
     pub fn remove(&mut self, k: &K) -> io::Result<Option<V>> {
         match self.sub_remove(0, hash(&k), k)? {
             Removed::None => Ok(None),
@@ -192,7 +198,7 @@ where
         }
     }
 
-    pub fn remove_singleton(&mut self) -> io::Result<Option<(K, V)>> {
+    fn remove_singleton(&mut self) -> io::Result<Option<(K, V)>> {
         let mut singleton = None;
 
         for (i, child) in self.0.iter().enumerate() {
@@ -211,6 +217,7 @@ where
     }
 
     #[cfg(test)]
+    #[doc(hidden)]
     pub fn assert_correct_empty_state(&self) {
         for child in self.0.iter() {
             match child.handle_type() {

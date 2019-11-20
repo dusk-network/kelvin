@@ -20,10 +20,12 @@ struct MemBackendInner<H: ByteHash> {
     data: ByteMap<H::Digest>,
 }
 
+/// A backend that stores its data in memory
 pub struct MemBackend<H: ByteHash>(RwLock<MemBackendInner<H>>);
 unsafe impl<H: ByteHash> Sync for MemBackend<H> {}
 
 impl<H: ByteHash> MemBackend<H> {
+    /// Creates a new `MemBackend`
     pub fn new() -> Self {
         MemBackend(RwLock::new(MemBackendInner {
             size: 0,

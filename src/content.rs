@@ -7,11 +7,15 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use crate::sink::Sink;
 use crate::source::Source;
 
+/// The main trait for content-adressable types, MUST assure a 1-1 mapping between
+/// values of the type and hash digests.
 pub trait Content<H: ByteHash>
 where
     Self: Sized + Clone + 'static + PartialEq + Eq,
 {
+    /// Write the type to a `Sink`
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()>;
+    /// Restore the type from a `Source`
     fn restore(source: &mut Source<H>) -> io::Result<Self>;
 }
 

@@ -35,6 +35,7 @@ impl<K, V> KVPair<K, V> for (K, V) {
     }
 }
 
+/// A path to a leaf in a map Compound
 pub struct ValPath<'a, K, V, C, H>
 where
     C: Compound<H>,
@@ -45,6 +46,7 @@ where
     _marker: PhantomData<(K, V)>,
 }
 
+/// A path to a mutable leaf in a map Compound
 pub struct ValPathMut<'a, K, V, C, H>
 where
     C: Compound<H>,
@@ -62,6 +64,7 @@ where
     H: ByteHash,
     K: PartialEq + Eq,
 {
+    /// Creates a new `ValPath`, when leaf is found and key matches
     pub fn new<'m, M>(
         node: &'a C,
         method: &mut M,
@@ -86,6 +89,7 @@ where
     H: ByteHash,
     K: PartialEq + Eq,
 {
+    /// Creates a new `ValPathMut`, when leaf is found and key matches
     pub fn new<'m, M>(
         node: &'a mut C,
         method: &mut M,
@@ -164,14 +168,20 @@ where
     C: Compound<H>,
     H: ByteHash;
 
+/// Compound can be iterated over like a map
 pub trait KeyValIterable<K, V, H>
 where
     Self: Compound<H>,
     Self::Leaf: KVPair<K, V>,
     H: ByteHash,
 {
+    /// Iterator over the values of the map
     fn values(&self) -> ValIter<Self, K, V, First, H>;
+
+    /// Iterator over the mutable values of the map
     fn values_mut(&mut self) -> ValIterMut<Self, K, V, First, H>;
+
+    /// Iterator over the keys of the map
     fn keys(&mut self) -> KeyIter<Self, K, V, First, H>;
 }
 
@@ -242,10 +252,12 @@ where
     }
 }
 
+/// Value reference trait to hide generic arguments to users of the library
 pub trait ValRef<'a, V>: Deref<Target = V> + 'a
 where
     Self: Sized,
 {
+    /// Wrap the ValPath in an OwningRef
     fn wrap<V2, F>(self, f: F) -> OwningRef<Box<Self>, V2>
     where
         V2: 'a,
@@ -256,10 +268,12 @@ where
 }
 impl<'a, T, V> ValRef<'a, V> for T where T: Deref<Target = V> + 'a {}
 
+/// Mutable value reference trait to hide generic arguments to users of the library
 pub trait ValRefMut<'a, V>: DerefMut<Target = V> + 'a
 where
     Self: Sized,
 {
+    /// Wrap the ValPathMut in an OwningRef
     fn wrap_mut<V2, F>(self, f: F) -> OwningRefMut<Box<Self>, V2>
     where
         V2: 'a,
