@@ -9,12 +9,12 @@ use bytehash::ByteHash;
 use cache::Cache;
 use parking_lot::RwLock;
 
-use crate::backend::{Backend, MemBackend, PutResult};
-use crate::compound::Compound;
-use crate::handle::Handle;
+use crate::backend::{Backend, DiskBackend, PutResult};
+use crate::content::Content;
 use crate::sink::Sink;
 use crate::source::Source;
 
+/// The main store type, wrapping backend and cache functionality
 #[derive(Clone)]
 pub struct Store<H: ByteHash>(Arc<StoreInner<H>>);
 
@@ -32,6 +32,7 @@ impl<H: ByteHash> fmt::Debug for Store<H> {
     }
 }
 
+#[doc(hidden)]
 pub struct Shared<T, H: ByteHash>(T, PhantomData<H>);
 
 unsafe impl<T, H: ByteHash> Send for Shared<T, H> {}
@@ -43,7 +44,7 @@ pub struct Snapshot<T, H: ByteHash> {
     _marker: PhantomData<T>,
 }
 
-impl<T: Compound<H>, H: ByteHash> Snapshot<T, H> {
+impl<T: Content<H>, H: ByteHash> Snapshot<T, H> {
     pub(crate) fn new(hash: H::Digest, store: &Store<H>) -> Self {
         Snapshot {
             hash,
@@ -65,28 +66,25 @@ impl<N, H: ByteHash> Deref for Snapshot<N, H> {
 }
 
 impl<H: ByteHash> Store<H> {
-    pub fn new<P: Into<PathBuf>>(_path: &P) -> Self {
-        let mem = MemBackend::new();
+    /// Creates a new Store at `path`
+    pub fn new<P: Into<PathBuf>>(path: P) -> io::Result<Self> {
+        let mem = DiskBackend::new(path)?;
         let mut generations = ArrayVec::new();
         generations.push(RwLock::new(Box::new(mem) as Box<dyn Backend<H>>));
 
-        Store(Arc::new(StoreInner {
+        Ok(Store(Arc::new(StoreInner {
             generations,
             cache: Cache::new(32, 4096),
-        }))
+        })))
     }
 
-    pub fn persist<T: Compound<H>>(
+    /// Persists Content to the store, returning a Snapshot
+    pub fn persist<T: Content<H>>(
         &self,
-        compound: &mut T,
+        content: &mut T,
     ) -> io::Result<Snapshot<T, H>> {
-        let children: &mut [Handle<T, H>] = compound.children_mut();
-        for c in children {
-            c.pre_persist(self)?;
-        }
-
         let mut sink = Sink::new(self);
-        compound.persist(&mut sink)?;
+        content.persist(&mut sink)?;
         Ok(Snapshot {
             hash: sink.fin()?,
             store: self.clone(),
@@ -102,7 +100,8 @@ impl<H: ByteHash> Store<H> {
         self.0.generations[0].write().put(hash, bytes)
     }
 
-    pub fn restore<T: Compound<H>>(
+    /// Restores a snapshot from Backend
+    pub fn restore<T: Content<H>>(
         &self,
         snap: &Snapshot<T, H>,
     ) -> io::Result<T> {
@@ -118,6 +117,7 @@ impl<H: ByteHash> Store<H> {
         panic!("could not restore");
     }
 
+    /// Returns the approximate size of the store
     pub fn size(&self) -> usize {
         let mut size = 0;
         for gen in self.0.generations.as_ref() {

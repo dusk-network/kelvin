@@ -1,3 +1,6 @@
+//! Kelvin, a Merkle-tree tooklit and backend
+#![deny(missing_docs)]
+
 mod backend;
 mod branch;
 mod compound;
@@ -15,7 +18,7 @@ mod unsafe_branch;
 
 pub use crate::backend::{Backend, DiskBackend, MemBackend};
 pub use crate::branch::{Branch, BranchMut};
-pub use crate::compound::{Compound, InsertResult};
+pub use crate::compound::Compound;
 pub use crate::content::Content;
 pub use crate::handle::{
     Handle, HandleMut, HandleOwned, HandleRef, HandleType,
@@ -35,6 +38,7 @@ pub use structures::HAMT;
 
 // default types
 
+/// Map using HAMT and Blake2b
 pub type Map<K, V> = HAMT<(K, V), Blake2b>;
 
 // test infra

@@ -1,3 +1,6 @@
+/// Model test suite for maps
+///
+/// Usage example: `quickcheck_map!(|| HAMT::new());`
 #[macro_export]
 macro_rules! quickcheck_map {
     ($new_map:expr) => {
@@ -55,14 +58,13 @@ macro_rules! quickcheck_map {
 
         fn run_ops(ops: Vec<Op>) -> bool {
             let dir = tempdir().unwrap();
-            let store = Store::<Blake2b>::new(&dir.path());
+            let store = Store::<Blake2b>::new(&dir.path()).unwrap();
 
             let mut test_a = $new_map();
 
             let mut model = HashMap::new();
 
             for op in ops {
-                println!("{:?}", op);
                 match op {
                     Op::Insert(k, v) => {
                         let a = test_a.insert(k, v).unwrap();

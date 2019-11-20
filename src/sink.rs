@@ -11,20 +11,25 @@ where
     fn recur(&self) -> Sink<H>;
 }
 
+/// A sink for bytes, used in implementing `Content`
 pub struct Sink<'a, H: ByteHash> {
     bytes: Vec<u8>,
     store: &'a Store<H>,
 }
 
 impl<'a, H: ByteHash> Sink<'a, H> {
-    pub fn new(store: &'a Store<H>) -> Self {
+    pub(crate) fn new(store: &'a Store<H>) -> Self {
         Sink {
             bytes: vec![],
             store,
         }
     }
 
-    pub fn fin(self) -> io::Result<H::Digest> {
+    pub(crate) fn store(&self) -> &Store<H> {
+        self.store
+    }
+
+    pub(crate) fn fin(self) -> io::Result<H::Digest> {
         let Sink { bytes, .. } = self;
         let mut hasher = H::state();
         hasher

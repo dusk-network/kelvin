@@ -4,6 +4,7 @@ use bytehash::ByteHash;
 
 use crate::store::Store;
 
+/// A source of bytes, used in implementing `Content`
 pub struct Source<'a, H: ByteHash> {
     read: Box<dyn Read + 'a>,
     store: &'a Store<H>,
