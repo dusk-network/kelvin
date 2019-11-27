@@ -32,15 +32,20 @@ fn hash<T: Hash>(t: T) -> u64 {
 }
 
 #[inline(always)]
-fn calculate_slot(h: u64, depth: u64) -> usize {
-    let result = hash(depth + h);
-    (result % N_BUCKETS as u64) as usize
+fn calculate_slot(mut h: u64, mut depth: usize) -> usize {
+    debug_assert!(N_BUCKETS == 16);
+    while depth > 15 {
+        h = hash(h);
+        depth -= 16;
+    }
+    let shifted = h >> (depth * 4);
+    (shifted & 0x0f) as usize
 }
 
 #[derive(Clone)]
 pub struct HAMTSearch {
     hash: u64,
-    depth: u64,
+    depth: usize,
 }
 
 impl<T> From<&T> for HAMTSearch
@@ -91,12 +96,12 @@ where
 
     fn sub_insert(
         &mut self,
-        depth: u64,
+        depth: usize,
         h: u64,
         k: K,
         v: V,
     ) -> io::Result<Option<V>> {
-        let s = calculate_slot(depth, h);
+        let s = calculate_slot(h, depth);
         let slot = &mut self.0[s];
 
         Ok(match slot.inner_mut()? {
@@ -149,11 +154,11 @@ where
 
     fn sub_remove(
         &mut self,
-        depth: u64,
+        depth: usize,
         h: u64,
         k: &K,
     ) -> io::Result<Removed<(K, V)>> {
-        let s = calculate_slot(depth, h);
+        let s = calculate_slot(h, depth);
         let slot = &mut self.0[s];
 
         let mut collapse = None;

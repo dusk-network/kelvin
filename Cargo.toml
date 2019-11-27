@@ -28,3 +28,14 @@ version = "1.2.2"
 tempfile = "3.0"
 rand = "0.6.5"
 quickcheck = "0.8"
+criterion = "0.2"
+
+[[bench]]
+name = "insert_hamt"
+path = "benches/insert_hamt.rs"
+harness = false
+
+[[bench]]
+name = "insert_btree"
+path = "benches/insert_btree.rs"
+harness = false
