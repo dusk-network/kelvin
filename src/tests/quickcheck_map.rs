@@ -219,7 +219,7 @@ macro_rules! quickcheck_map {
 
         // regressions
         #[test]
-        fn pre_persist_fail() {
+        fn regression_pre_persist_fail() {
             assert!(run_ops(vec![Insert(6, 241), Insert(9, 147), Persist]))
         }
     };

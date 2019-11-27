@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use bytehash::ByteHash;
-use owning_ref::{OwningRef, OwningRefMut};
+use owning_ref::{OwningRef, OwningRefMut, StableAddress};
 
 use crate::branch::{Branch, BranchMut};
 use crate::compound::Compound;
@@ -46,6 +46,14 @@ where
     _marker: PhantomData<(K, V)>,
 }
 
+unsafe impl<'a, K, V, C, H> StableAddress for ValPath<'a, K, V, C, H>
+where
+    C: Compound<H>,
+    C::Leaf: KVPair<K, V>,
+    H: ByteHash,
+{
+}
+
 /// A path to a mutable leaf in a map Compound
 pub struct ValPathMut<'a, K, V, C, H>
 where
@@ -55,6 +63,14 @@ where
 {
     branch: BranchMut<'a, C, H>,
     _marker: PhantomData<(K, V)>,
+}
+
+unsafe impl<'a, K, V, C, H> StableAddress for ValPathMut<'a, K, V, C, H>
+where
+    C: Compound<H>,
+    C::Leaf: KVPair<K, V>,
+    H: ByteHash,
+{
 }
 
 impl<'a, K, V, C, H> ValPath<'a, K, V, C, H>
@@ -253,37 +269,40 @@ where
 }
 
 /// Value reference trait to hide generic arguments to users of the library
-pub trait ValRef<'a, V>: Deref<Target = V> + 'a
+pub trait ValRef<'a, V: 'a>: Deref<Target = V> + 'a
 where
-    Self: Sized,
+    Self: Sized + StableAddress,
 {
     /// Wrap the ValPath in an OwningRef
-    fn wrap<V2, F>(self, f: F) -> OwningRef<Box<Self>, V2>
+    fn wrap<V2, F>(self, f: F) -> OwningRef<Self, V2>
     where
         V2: 'a,
-        F: FnOnce(&Self) -> &V2,
+        F: for<'r> FnOnce(&'r V) -> &'r V2,
     {
-        OwningRef::new(Box::new(self)).map(f)
+        OwningRef::new(self).map(f)
     }
 }
-impl<'a, T, V> ValRef<'a, V> for T where T: Deref<Target = V> + 'a {}
+impl<'a, T, V: 'a> ValRef<'a, V> for T where
+    T: StableAddress + Deref<Target = V> + 'a
+{
+}
 
 /// Mutable value reference trait to hide generic arguments to users of the library
 pub trait ValRefMut<'a, V>: DerefMut<Target = V> + 'a
 where
-    Self: Sized,
+    Self: Sized + StableAddress,
 {
     /// Wrap the ValPathMut in an OwningRef
-    fn wrap_mut<V2, F>(self, f: F) -> OwningRefMut<Box<Self>, V2>
+    fn wrap_mut<V2, F>(self, f: F) -> OwningRefMut<Self, V2>
     where
         V2: 'a,
-        F: FnOnce(&mut Self) -> &mut V2,
+        F: for<'r> FnOnce(&'r mut V) -> &'r mut V2,
     {
-        OwningRefMut::new(Box::new(self)).map_mut(f)
+        OwningRefMut::new(self).map_mut(f)
     }
 }
 
 impl<'a, T, V> ValRefMut<'a, V> for T where
-    T: Deref<Target = V> + 'a + DerefMut + 'a
+    T: StableAddress + Deref<Target = V> + 'a + DerefMut + 'a
 {
 }
