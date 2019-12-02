@@ -52,7 +52,11 @@ impl<H: ByteHash> Backend<H> for WebBackend<H> {
         }
     }
 
-    fn put(&self, hash: H::Digest, bytes: Vec<u8>) -> io::Result<PutResult> {
+    fn put(
+        &mut self,
+        hash: H::Digest,
+        bytes: Vec<u8>,
+    ) -> io::Result<PutResult> {
         let mut key = self.name.clone();
         encode_config_buf(hash.as_ref(), STANDARD_NO_PAD, &mut key);
 
