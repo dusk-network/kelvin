@@ -5,6 +5,7 @@ use std::mem;
 use crate::{
     Compound, Content, Handle, HandleMut, HandleOwned, HandleRef, HandleType,
     Method, Sink, Source, ValPath, ValPathMut, ValRef, ValRefMut,
+    VoidAnnotation,
 };
 use bytehash::ByteHash;
 use seahash::SeaHasher;
@@ -277,6 +278,7 @@ where
     L: Content<H>,
 {
     type Leaf = L;
+    type Annotation = VoidAnnotation;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
         &mut self.0
