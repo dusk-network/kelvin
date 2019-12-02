@@ -1,24 +1,19 @@
-use std::cell::UnsafeCell;
 use std::fs::{create_dir, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 use appendix::Index;
 use bytehash::ByteHash;
-use parking_lot::Mutex;
 
 use crate::backend::{Backend, PutResult};
 
 /// A backend that stores its data in an `appendix` index, and a flat file
 pub struct DiskBackend<H: ByteHash> {
     index: Index<H::Digest, u64>,
-    data: UnsafeCell<File>,
+    data: File,
     data_path: PathBuf,
-    data_offset: Mutex<u64>,
+    data_offset: u64,
 }
-
-unsafe impl<H: ByteHash> Send for DiskBackend<H> {}
-unsafe impl<H: ByteHash> Sync for DiskBackend<H> {}
 
 impl<H: ByteHash> DiskBackend<H> {
     /// Create a new DiskBackend at given path, creates a new directory if neccesary
@@ -39,8 +34,8 @@ impl<H: ByteHash> DiskBackend<H> {
         Ok(DiskBackend {
             index,
             data_path,
-            data: UnsafeCell::new(data),
-            data_offset: Mutex::new(data_offset),
+            data,
+            data_offset,
         })
     }
 }
@@ -57,23 +52,22 @@ impl<H: ByteHash> Backend<H> for DiskBackend<H> {
         }
     }
 
-    fn put(&self, hash: H::Digest, bytes: Vec<u8>) -> io::Result<PutResult> {
-        let mut offset_lock = self.data_offset.lock();
-        let offset = *offset_lock;
-
-        if self.index.insert(hash, offset)? {
+    fn put(
+        &mut self,
+        hash: H::Digest,
+        bytes: Vec<u8>,
+    ) -> io::Result<PutResult> {
+        if self.index.insert(hash, self.data_offset)? {
             // value already present
             Ok(PutResult::AlreadyThere)
         } else {
-            unsafe {
-                (*self.data.get()).write(&bytes)?;
-            }
-            *offset_lock += bytes.len() as u64;
+            self.data.write(&bytes)?;
+            self.data_offset += bytes.len() as u64;
             Ok(PutResult::Ok)
         }
     }
 
     fn size(&self) -> usize {
-        self.index.on_disk_size() + *self.data_offset.lock() as usize
+        self.index.on_disk_size() + self.data_offset as usize
     }
 }
