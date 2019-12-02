@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io::{self, Read, Write};
 use std::mem;
 use std::sync::Arc;
@@ -17,9 +18,9 @@ where
     H: ByteHash,
 {
     Leaf(C::Leaf),
-    Node(Box<C>),
-    SharedNode(Arc<C>),
-    Persisted(Snapshot<C, H>),
+    Node(Box<C>, C::Annotation),
+    SharedNode(Arc<C>, C::Annotation),
+    Persisted(Snapshot<C, H>, C::Annotation),
     None,
 }
 
@@ -121,12 +122,14 @@ where
     fn clone(&self) -> Self {
         match self {
             HandleInner::Leaf(ref l) => HandleInner::Leaf(l.clone()),
-            HandleInner::Node(ref n) => HandleInner::Node(n.clone()),
-            HandleInner::SharedNode(ref arc) => {
-                HandleInner::SharedNode(arc.clone())
+            HandleInner::Node(ref n, ref ann) => {
+                HandleInner::Node(n.clone(), ann.clone())
             }
-            HandleInner::Persisted(ref snap) => {
-                HandleInner::Persisted(snap.clone())
+            HandleInner::SharedNode(ref arc, ref ann) => {
+                HandleInner::SharedNode(arc.clone(), ann.clone())
+            }
+            HandleInner::Persisted(ref snap, ref ann) => {
+                HandleInner::Persisted(snap.clone(), ann.clone())
             }
             HandleInner::None => HandleInner::None,
         }
@@ -145,18 +148,17 @@ where
                 sink.write_all(&[1])?;
                 leaf.persist(sink)
             }
-            HandleInner::Persisted(ref digest) => {
+            HandleInner::Persisted(ref digest, ref mut ann) => {
                 sink.write_all(&[2])?;
-                sink.write_all((**digest).as_ref())
+                sink.write_all((**digest).as_ref())?;
+                ann.persist(sink)
             }
-            HandleInner::Node(ref mut node) => {
+            HandleInner::Node(ref mut node, ref ann) => {
                 let snap = sink.store().persist(&mut **node)?;
-                let digest = *snap;
-                self.0 = HandleInner::Persisted(snap);
-                sink.write_all(&[2])?;
-                sink.write_all(digest.as_ref())
+                self.0 = HandleInner::Persisted(snap, ann.clone());
+                self.persist(sink)
             }
-            HandleInner::SharedNode(_) => unimplemented!(),
+            HandleInner::SharedNode(_, _) => unimplemented!(),
         }
     }
 
@@ -169,10 +171,10 @@ where
             [2] => {
                 let mut h = H::Digest::default();
                 source.read(h.as_mut())?;
-                Ok(Handle(HandleInner::Persisted(Snapshot::new(
-                    h,
-                    source.store(),
-                ))))
+                Ok(Handle(HandleInner::Persisted(
+                    Snapshot::new(h, source.store()),
+                    C::Annotation::restore(source)?,
+                )))
             }
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -194,7 +196,9 @@ where
 
     /// Constructs a new node Handle
     pub fn new_node<I: Into<Box<C>>>(n: I) -> Handle<C, H> {
-        Handle(HandleInner::Node(n.into()))
+        let node = n.into();
+        let ann = node.annotation();
+        Handle(HandleInner::Node(node, ann))
     }
 
     /// Returns a reference to contained leaf, if any
@@ -252,9 +256,11 @@ where
                 }
             }
             HandleOwned::Node(node) => {
-                if let HandleInner::Leaf(leaf) =
-                    mem::replace(&mut self.0, HandleInner::Node(Box::new(node)))
-                {
+                let ann = node.annotation();
+                if let HandleInner::Leaf(leaf) = mem::replace(
+                    &mut self.0,
+                    HandleInner::Node(Box::new(node), ann),
+                ) {
                     Some(leaf)
                 } else {
                     None
@@ -263,18 +269,31 @@ where
         }
     }
 
+    /// Return the annotation for the handle, unless None
+    pub fn annotation(&self) -> Option<Cow<C::Annotation>> {
+        match self.0 {
+            HandleInner::None => None,
+            HandleInner::Leaf(ref l) => {
+                Some(Cow::Owned(C::Annotation::from(l)))
+            }
+            HandleInner::Node(_, ref ann)
+            | HandleInner::SharedNode(_, ref ann)
+            | HandleInner::Persisted(_, ref ann) => Some(Cow::Borrowed(ann)),
+        }
+    }
+
     /// Returns a HandleRef from the Handle
     pub fn inner(&self) -> io::Result<HandleRef<C, H>> {
         Ok(match self.0 {
             HandleInner::None => HandleRef::None,
             HandleInner::Leaf(ref l) => HandleRef::Leaf(l),
-            HandleInner::Node(ref n) => {
+            HandleInner::Node(ref n, _) => {
                 HandleRef::Node(Cached::Borrowed(n.as_ref()))
             }
-            HandleInner::SharedNode(ref n) => {
+            HandleInner::SharedNode(ref n, _) => {
                 HandleRef::Node(Cached::Borrowed(n.as_ref()))
             }
-            HandleInner::Persisted(ref snap) => {
+            HandleInner::Persisted(ref snap, _) => {
                 let restored = snap.restore()?;
                 HandleRef::Node(Cached::Spilled(Box::new(restored)))
             }
@@ -286,11 +305,17 @@ where
         Ok(match self.0 {
             HandleInner::None => HandleMut::None,
             HandleInner::Leaf(ref mut l) => HandleMut::Leaf(l),
-            HandleInner::Node(ref mut n) => HandleMut::Node(n.as_mut()),
-            HandleInner::Persisted(ref snapshot) => {
-                let restored = snapshot.restore()?;
-                *self = Handle(HandleInner::Node(Box::new(restored)));
-                self.inner_mut()?
+            HandleInner::Node(ref mut n, _) => HandleMut::Node(n),
+            HandleInner::Persisted(_, _) => {
+                if let HandleInner::Persisted(snap, ann) =
+                    mem::replace(&mut self.0, HandleInner::None)
+                {
+                    let restored = snap.restore()?;
+                    *self = Handle(HandleInner::Node(Box::new(restored), ann));
+                    self.inner_mut()?
+                } else {
+                    unreachable!()
+                }
             }
             _ => unimplemented!(),
         })
@@ -298,11 +323,11 @@ where
 
     #[doc(hidden)]
     pub fn make_shared(&mut self) {
-        if let HandleInner::Node(_) = self.0 {
-            if let HandleInner::Node(node) =
+        if let HandleInner::Node(_, _) = self.0 {
+            if let HandleInner::Node(node, ann) =
                 mem::replace(&mut self.0, HandleInner::None)
             {
-                self.0 = HandleInner::SharedNode(Arc::new(*node))
+                self.0 = HandleInner::SharedNode(Arc::new(*node), ann)
             } else {
                 unreachable!()
             }
