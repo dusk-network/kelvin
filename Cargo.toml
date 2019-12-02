@@ -16,9 +16,13 @@ lazy_static = "1.1.0"
 owning_ref = "0.4.0"
 parking_lot = "0.6.4"
 tempfile = "3.0.3"
-appendix = "0.1"
+appendix = { version = "0.1", optional = true }
+web-sys = { optional = true, features = [ "Window", "Storage" ], version = "*"}
+futures = "0.3.1"
+wasm-bindgen = { optional = true, version = "*" }
 smallvec = "0.6"
 seahash = "3.0"
+base64 = "0.11"
 
 [dependencies.byteorder]
 features = ["i128"]
@@ -29,6 +33,12 @@ tempfile = "3.0"
 rand = "0.6.5"
 quickcheck = "0.8"
 criterion = "0.2"
+
+[features]
+default = ["filesystem"]
+
+filesystem = ["appendix"]
+web = ["web-sys", "wasm-bindgen" ]
 
 [[bench]]
 name = "insert_hamt"

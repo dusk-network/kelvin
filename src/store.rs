@@ -9,7 +9,7 @@ use bytehash::ByteHash;
 use cache::Cache;
 use parking_lot::RwLock;
 
-use crate::backend::{Backend, DiskBackend, PutResult};
+use crate::backend::{Backend, Persistant, PutResult, Volatile};
 use crate::content::Content;
 use crate::sink::Sink;
 use crate::source::Source;
@@ -68,9 +68,21 @@ impl<N, H: ByteHash> Deref for Snapshot<N, H> {
 impl<H: ByteHash> Store<H> {
     /// Creates a new Store at `path`
     pub fn new<P: Into<PathBuf>>(path: P) -> io::Result<Self> {
-        let mem = DiskBackend::new(path)?;
+        let pers = Persistant::new(path)?;
         let mut generations = ArrayVec::new();
-        generations.push(RwLock::new(Box::new(mem) as Box<dyn Backend<H>>));
+        generations.push(RwLock::new(Box::new(pers) as Box<dyn Backend<H>>));
+
+        Ok(Store(Arc::new(StoreInner {
+            generations,
+            cache: Cache::new(32, 4096),
+        })))
+    }
+
+    /// Creates a new volatile (in-memory only) Store
+    pub fn volatile() -> io::Result<Self> {
+        let pers = Volatile::new();
+        let mut generations = ArrayVec::new();
+        generations.push(RwLock::new(Box::new(pers) as Box<dyn Backend<H>>));
 
         Ok(Store(Arc::new(StoreInner {
             generations,

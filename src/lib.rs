@@ -16,7 +16,7 @@ mod structures;
 mod tests;
 mod unsafe_branch;
 
-pub use crate::backend::{Backend, DiskBackend, MemBackend};
+pub use crate::backend::Backend;
 pub use crate::branch::{Branch, BranchMut};
 pub use crate::compound::Compound;
 pub use crate::content::Content;
@@ -40,6 +40,8 @@ pub use structures::HAMT;
 
 /// Map using HAMT and Blake2b
 pub type Map<K, V> = HAMT<(K, V), Blake2b>;
+/// Persistant store using Blake2b
+pub type DefaultStore = Store<Blake2b>;
 
 // test infra
 #[cfg(test)]
