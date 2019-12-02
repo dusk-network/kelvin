@@ -2,11 +2,20 @@ use std::io::{self, Read};
 
 use bytehash::ByteHash;
 
-mod disk;
 mod mem;
 
-pub use self::disk::DiskBackend;
-pub use self::mem::MemBackend;
+#[cfg(feature = "filesystem")]
+mod disk;
+#[cfg(feature = "web")]
+mod localstorage;
+
+#[cfg(feature = "web")]
+pub use self::localstorage::WebBackend as Persistant;
+
+#[cfg(feature = "filesystem")]
+pub use disk::DiskBackend as Persistant;
+
+pub use self::mem::MemBackend as Volatile;
 
 pub enum PutResult {
     Ok,
