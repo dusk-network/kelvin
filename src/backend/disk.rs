@@ -48,7 +48,9 @@ impl<H: ByteHash> Backend<H> for DiskBackend<H> {
                 file.seek(SeekFrom::Start(*offset))?;
                 Ok(Box::new(file))
             }
-            None => unimplemented!(),
+            None => {
+                Err(io::Error::new(io::ErrorKind::NotFound, "Data not found"))
+            }
         }
     }
 

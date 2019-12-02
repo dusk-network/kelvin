@@ -2,14 +2,8 @@ use std::collections::HashMap;
 use std::io::{self, Cursor, Read};
 
 use bytehash::ByteHash;
-use lazy_static::lazy_static;
 
 use crate::backend::{Backend, PutResult};
-
-// Used to return a `&Vec` when get fails
-lazy_static! {
-    static ref EMPTY: Vec<u8> = { vec![] };
-}
 
 type ByteMap<D> = HashMap<D, Vec<u8>>;
 
@@ -31,9 +25,11 @@ impl<H: ByteHash> MemBackend<H> {
 
 impl<H: ByteHash> Backend<H> for MemBackend<H> {
     fn get<'a>(&'a self, hash: &H::Digest) -> io::Result<Box<dyn Read + 'a>> {
-        Ok(Box::new(Cursor::new(
-            self.data.get(hash).unwrap_or(&*EMPTY),
-        )))
+        if let Some(data) = self.data.get(hash) {
+            Ok(Box::new(Cursor::new(data)))
+        } else {
+            Err(io::Error::new(io::ErrorKind::NotFound, "Data not found"))
+        }
     }
 
     fn put(
