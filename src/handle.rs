@@ -181,7 +181,7 @@ where
     }
 
     /// Returns a reference to contained leaf, if any
-    pub fn leaf(&self) -> Option<&C::Leaf> {
+    pub(crate) fn leaf(&self) -> Option<&C::Leaf> {
         match self.0 {
             HandleInner::Leaf(ref leaf) => Some(leaf),
             _ => None,
@@ -189,7 +189,7 @@ where
     }
 
     /// Returns a mutable reference to contained leaf, if any
-    pub fn leaf_mut(&mut self) -> Option<&mut C::Leaf> {
+    pub(crate) fn leaf_mut(&mut self) -> Option<&mut C::Leaf> {
         match self.0 {
             HandleInner::Leaf(ref mut leaf) => Some(leaf),
             _ => None,
@@ -213,8 +213,53 @@ where
         }
     }
 
-    /// Replace the handle with an owned one, returning the leaf if any
-    pub fn replace(&mut self, with: HandleOwned<C, H>) -> Option<C::Leaf> {
+    /// Return the annotation for the handle, unless None
+    pub fn annotation(&self) -> Option<Cow<C::Annotation>> {
+        match self.0 {
+            HandleInner::None => None,
+            HandleInner::Leaf(ref l) => {
+                Some(Cow::Owned(C::Annotation::from(l)))
+            }
+            HandleInner::Node(_, ref ann)
+            | HandleInner::SharedNode(_, ref ann)
+            | HandleInner::Persisted(_, ref ann) => Some(Cow::Borrowed(ann)),
+        }
+    }
+
+    pub(crate) fn update_annotation(&mut self) {
+        // Only the case of Node needs an updated annotation, since it's the only case
+        // that has an annotation and could have been updated
+        match self.0 {
+            HandleInner::Node(ref node, ref mut ann) => {
+                *ann = node.annotation().expect("Invalid empty node handle")
+            }
+            _ => (),
+        }
+    }
+
+    /// Returns a HandleRef from the Handle
+    pub fn inner(&self) -> io::Result<HandleRef<C, H>> {
+        Ok(match self.0 {
+            HandleInner::None => HandleRef::None,
+            HandleInner::Leaf(ref l) => HandleRef::Leaf(l),
+            HandleInner::Node(ref n, _) => {
+                HandleRef::Node(Cached::Borrowed(n.as_ref()))
+            }
+            HandleInner::SharedNode(ref n, _) => {
+                HandleRef::Node(Cached::Borrowed(n.as_ref()))
+            }
+            HandleInner::Persisted(ref snap, _) => {
+                let restored = snap.restore()?;
+                HandleRef::Node(Cached::Spilled(Box::new(restored)))
+            }
+        })
+    }
+
+    // Should NOT be called directly by datastructure code
+    pub(crate) fn _replace(
+        &mut self,
+        with: HandleOwned<C, H>,
+    ) -> Option<C::Leaf> {
         match with {
             HandleOwned::None => {
                 if let HandleInner::Leaf(replaced) =
@@ -249,60 +294,8 @@ where
         }
     }
 
-    /// Return the annotation for the handle, unless None
-    pub fn annotation(&self) -> Option<Cow<C::Annotation>> {
-        match self.0 {
-            HandleInner::None => None,
-            HandleInner::Leaf(ref l) => {
-                Some(Cow::Owned(C::Annotation::from(l)))
-            }
-            HandleInner::Node(_, ref ann)
-            | HandleInner::SharedNode(_, ref ann)
-            | HandleInner::Persisted(_, ref ann) => Some(Cow::Borrowed(ann)),
-        }
-    }
-
-    /// Updates the annotations of the node
-    pub fn update_annotation(&mut self) {
-        // Only the case of Node needs an updated annotation, since it's the only case
-        // that has an annotation and could have been updated
-        match self.0 {
-            HandleInner::Node(ref node, ref mut ann) => {
-                *ann = node.annotation().expect("Invalid empty node handle")
-            }
-            _ => (),
-        }
-    }
-
-    // fn annotation_mut(&mut self) -> Option<&mut C::Annotation> {
-    //     match self.0 {
-    //         HandleInner::None | HandleInner::Leaf(_) => None,
-    //         HandleInner::Node(_, ref mut ann)
-    //         | HandleInner::SharedNode(_, ref mut ann)
-    //         | HandleInner::Persisted(_, ref mut ann) => Some(ann),
-    //     }
-    // }
-
-    /// Returns a HandleRef from the Handle
-    pub fn inner(&self) -> io::Result<HandleRef<C, H>> {
-        Ok(match self.0 {
-            HandleInner::None => HandleRef::None,
-            HandleInner::Leaf(ref l) => HandleRef::Leaf(l),
-            HandleInner::Node(ref n, _) => {
-                HandleRef::Node(Cached::Borrowed(n.as_ref()))
-            }
-            HandleInner::SharedNode(ref n, _) => {
-                HandleRef::Node(Cached::Borrowed(n.as_ref()))
-            }
-            HandleInner::Persisted(ref snap, _) => {
-                let restored = snap.restore()?;
-                HandleRef::Node(Cached::Spilled(Box::new(restored)))
-            }
-        })
-    }
-
-    /// Returns a HandleRefMut from the Handle
-    pub fn inner_mut(&mut self) -> io::Result<HandleMut<C, H>> {
+    // Should NOT be called directly by datastructure code
+    pub(crate) fn _inner_mut(&mut self) -> io::Result<HandleMut<C, H>> {
         Ok(match self.0 {
             HandleInner::None => HandleMut::None,
             HandleInner::Leaf(ref mut l) => HandleMut::Leaf(l),
@@ -313,7 +306,7 @@ where
                 {
                     let restored = snap.restore()?;
                     *self = Handle(HandleInner::Node(Box::new(restored), ann));
-                    return self.inner_mut();
+                    return self._inner_mut();
                 } else {
                     unreachable!()
                 }

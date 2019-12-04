@@ -1,9 +1,10 @@
 //! Kelvin, a Merkle-tree tooklit and backend
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 mod annotations;
 mod backend;
 mod branch;
+mod children;
 mod compound;
 mod content;
 mod handle;
@@ -20,6 +21,7 @@ mod unsafe_branch;
 pub use crate::annotations::{Associative, Combine, VoidAnnotation};
 pub use crate::backend::Backend;
 pub use crate::branch::{Branch, BranchMut};
+pub use crate::children::Children;
 pub use crate::compound::Compound;
 pub use crate::content::Content;
 pub use crate::handle::{

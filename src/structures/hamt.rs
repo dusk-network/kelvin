@@ -3,7 +3,7 @@ use std::iter::Iterator;
 use std::mem;
 
 use crate::{
-    annotations::Cardinality, Compound, Content, Handle, HandleMut,
+    annotations::Cardinality, Children, Compound, Content, Handle, HandleMut,
     HandleOwned, HandleRef, HandleType, Method, Sink, Source, ValPath,
     ValPathMut, ValRef, ValRefMut,
 };
@@ -103,9 +103,9 @@ where
         v: V,
     ) -> io::Result<Option<V>> {
         let s = calculate_slot(h, depth);
-        let slot = &mut self.0[s];
+        let mut slot = self.0.slot_mut(s);
 
-        let result = match slot.inner_mut()? {
+        Ok(match slot.inner_mut()? {
             HandleMut::None => {
                 slot.replace(HandleOwned::Leaf((k, v)));
                 None
@@ -128,9 +128,7 @@ where
                 }
             }
             HandleMut::Node(node) => node.sub_insert(depth + 1, h, k, v)?,
-        };
-        slot.update_annotation();
-        Ok(result)
+        })
     }
 
     /// Returns a reference to a value in the map, if any
@@ -161,41 +159,42 @@ where
         h: u64,
         k: &K,
     ) -> io::Result<Removed<(K, V)>> {
-        let s = calculate_slot(h, depth);
-        let slot = &mut self.0[s];
-
-        let mut collapse = None;
-
-        match slot.inner_mut()? {
-            HandleMut::None => return Ok(Removed::None),
-            HandleMut::Leaf((place_k, _)) => {
-                if place_k != k {
-                    return Ok(Removed::None);
-                }
-            }
-            HandleMut::Node(node) => match node.sub_remove(depth + 1, h, k)? {
-                Removed::Collapse(removed, reinsert) => {
-                    collapse = Some((removed, reinsert));
-                }
-                a => {
-                    slot.update_annotation();
-                    return Ok(a);
-                }
-            },
-        };
-
         let removed_leaf;
+        {
+            let s = calculate_slot(h, depth);
+            let mut slot = self.0.slot_mut(s);
 
-        // lower level collapsed
-        if let Some((removed, reinsert)) = collapse {
-            removed_leaf = removed;
-            slot.replace(HandleOwned::Leaf(reinsert));
-        } else {
-            removed_leaf = slot
-                .replace(HandleOwned::None)
-                .expect("leaf checked in previous match");
+            let mut collapse = None;
+
+            match slot.inner_mut()? {
+                HandleMut::None => return Ok(Removed::None),
+                HandleMut::Leaf((place_k, _)) => {
+                    if place_k != k {
+                        return Ok(Removed::None);
+                    }
+                }
+                HandleMut::Node(node) => {
+                    match node.sub_remove(depth + 1, h, k)? {
+                        Removed::Collapse(removed, reinsert) => {
+                            collapse = Some((removed, reinsert));
+                        }
+                        a => {
+                            return Ok(a);
+                        }
+                    }
+                }
+            };
+
+            // lower level collapsed
+            if let Some((removed, reinsert)) = collapse {
+                removed_leaf = removed;
+                slot.replace(HandleOwned::Leaf(reinsert));
+            } else {
+                removed_leaf = slot
+                    .replace(HandleOwned::None)
+                    .expect("leaf checked in previous match");
+            }
         }
-
         // we might have to collapse the branch
         // removing singletons and re-inserting does not change the annotation
         if depth > 0 {
@@ -220,7 +219,7 @@ where
             }
         }
         if let Some(idx) = singleton {
-            Ok(self.0[idx].replace(HandleOwned::None))
+            Ok(self.0.slot_mut(idx).replace(HandleOwned::None))
         } else {
             Ok(None)
         }
