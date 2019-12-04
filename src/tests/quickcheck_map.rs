@@ -11,7 +11,7 @@ macro_rules! quickcheck_map {
         use std::collections::HashMap;
 
         #[allow(unused)]
-        use crate::{KeyValIterable, LeafIterable, Store};
+        use crate::{annotations::Count, KeyValIterable, LeafIterable, Store};
         use quickcheck::{quickcheck, Arbitrary, Gen};
 
         use rand::Rng;
@@ -32,12 +32,13 @@ macro_rules! quickcheck_map {
             Keys,
             Persist,
             PersistRestore,
+            Count,
         }
 
         impl Arbitrary for Op {
             fn arbitrary<G: Gen>(g: &mut G) -> Op {
                 let k: u8 = g.gen_range(0, KEY_SPACE);
-                let op = g.gen_range(0, 12);
+                let op = g.gen_range(0, 13);
                 match op {
                     0 => Op::Insert(k, g.gen()),
                     1 => Op::Iter,
@@ -51,6 +52,7 @@ macro_rules! quickcheck_map {
                     9 => Op::Keys,
                     10 => Op::Persist,
                     11 => Op::PersistRestore,
+                    12 => Op::Count,
                     _ => unreachable!(),
                 }
             }
@@ -61,7 +63,6 @@ macro_rules! quickcheck_map {
             let store = Store::<Blake2b>::new(&dir.path()).unwrap();
 
             let mut test_a = $new_map();
-
             let mut model = HashMap::new();
 
             for op in ops {
@@ -204,6 +205,9 @@ macro_rules! quickcheck_map {
                         let snapshot = store.persist(&mut test_a).unwrap();
                         test_a = store.restore(&snapshot).unwrap();
                     }
+                    Op::Count => {
+                        assert_eq!(test_a.count() as usize, model.len())
+                    }
                 };
             }
             true
@@ -221,6 +225,27 @@ macro_rules! quickcheck_map {
         #[test]
         fn regression_pre_persist_fail() {
             assert!(run_ops(vec![Insert(6, 241), Insert(9, 147), Persist]))
+        }
+
+        #[test]
+        fn regression_invalid_count_insert() {
+            assert!(run_ops(vec![
+                Insert(19, 240),
+                Insert(1, 84),
+                Insert(7, 203),
+                Count
+            ]))
+        }
+
+        #[test]
+        fn regression_invalid_count_remove() {
+            assert!(run_ops(vec![
+                Insert(19, 45),
+                Insert(7, 126),
+                Insert(1, 198),
+                Remove(7),
+                Count
+            ]))
         }
     };
 }

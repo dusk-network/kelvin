@@ -21,7 +21,7 @@ where
     fn children_mut(&mut self) -> &mut [Handle<Self, H>];
 
     /// Calculates the annotation for the node
-    fn annotation(&self) -> Self::Annotation {
+    fn annotation(&self) -> Option<Self::Annotation> {
         Self::Annotation::combine(
             self.children().iter().filter_map(Handle::annotation),
         )
