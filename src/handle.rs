@@ -93,27 +93,6 @@ where
     }
 }
 
-impl<C, H> PartialEq for Handle<C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    fn eq(&self, other: &Self) -> bool {
-        match (&self.0, &other.0) {
-            (HandleInner::None, HandleInner::None) => true,
-            (HandleInner::Leaf(a), HandleInner::Leaf(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
-impl<C, H> Eq for Handle<C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-}
-
 impl<C, H> Clone for HandleInner<C, H>
 where
     C: Compound<H>,
@@ -197,7 +176,7 @@ where
     /// Constructs a new node Handle
     pub fn new_node<I: Into<Box<C>>>(n: I) -> Handle<C, H> {
         let node = n.into();
-        let ann = node.annotation();
+        let ann = node.annotation().expect("Empty node handles are invalid");
         Handle(HandleInner::Node(node, ann))
     }
 
@@ -256,7 +235,8 @@ where
                 }
             }
             HandleOwned::Node(node) => {
-                let ann = node.annotation();
+                let ann =
+                    node.annotation().expect("Empty node handles are invalid");
                 if let HandleInner::Leaf(leaf) = mem::replace(
                     &mut self.0,
                     HandleInner::Node(Box::new(node), ann),
@@ -282,6 +262,27 @@ where
         }
     }
 
+    /// Updates the annotations of the node
+    pub fn update_annotation(&mut self) {
+        // Only the case of Node needs an updated annotation, since it's the only case
+        // that has an annotation and could have been updated
+        match self.0 {
+            HandleInner::Node(ref node, ref mut ann) => {
+                *ann = node.annotation().expect("Invalid empty node handle")
+            }
+            _ => (),
+        }
+    }
+
+    // fn annotation_mut(&mut self) -> Option<&mut C::Annotation> {
+    //     match self.0 {
+    //         HandleInner::None | HandleInner::Leaf(_) => None,
+    //         HandleInner::Node(_, ref mut ann)
+    //         | HandleInner::SharedNode(_, ref mut ann)
+    //         | HandleInner::Persisted(_, ref mut ann) => Some(ann),
+    //     }
+    // }
+
     /// Returns a HandleRef from the Handle
     pub fn inner(&self) -> io::Result<HandleRef<C, H>> {
         Ok(match self.0 {
@@ -305,14 +306,14 @@ where
         Ok(match self.0 {
             HandleInner::None => HandleMut::None,
             HandleInner::Leaf(ref mut l) => HandleMut::Leaf(l),
-            HandleInner::Node(ref mut n, _) => HandleMut::Node(n),
+            HandleInner::Node(ref mut n, _) => HandleMut::Node(&mut **n),
             HandleInner::Persisted(_, _) => {
                 if let HandleInner::Persisted(snap, ann) =
                     mem::replace(&mut self.0, HandleInner::None)
                 {
                     let restored = snap.restore()?;
                     *self = Handle(HandleInner::Node(Box::new(restored), ann));
-                    self.inner_mut()?
+                    return self.inner_mut();
                 } else {
                     unreachable!()
                 }

@@ -11,7 +11,7 @@ use crate::source::Source;
 /// values of the type and hash digests.
 pub trait Content<H: ByteHash>
 where
-    Self: Sized + Clone + 'static + PartialEq + Eq,
+    Self: Sized + Clone + 'static,
 {
     /// Write the type to a `Sink`
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()>;

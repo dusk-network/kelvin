@@ -1,7 +1,11 @@
+mod cardinality;
+
 use std::borrow::Borrow;
 use std::io;
 
 use bytehash::ByteHash;
+
+pub use cardinality::{Cardinality, Count};
 
 use crate::{Content, Sink, Source};
 
@@ -14,25 +18,27 @@ pub trait Associative {
 /// Defines how multiple annotation types are combined
 pub trait Combine: Sized {
     /// Combines n>1 elements into one
-    fn combine(elements: impl IntoIterator<Item = impl Borrow<Self>>) -> Self;
+    fn combine(
+        elements: impl IntoIterator<Item = impl Borrow<Self>>,
+    ) -> Option<Self>;
 }
 
 impl<T> Combine for T
 where
     T: Associative + Clone,
 {
-    fn combine(elements: impl IntoIterator<Item = impl Borrow<Self>>) -> Self {
+    fn combine(
+        elements: impl IntoIterator<Item = impl Borrow<Self>>,
+    ) -> Option<Self> {
         let mut iter = elements.into_iter();
-        let mut a = iter
-            .next()
-            .expect("Combine called on empty iterator")
-            .borrow()
-            .clone();
 
-        while let Some(next) = iter.next() {
-            a.op(next.borrow())
-        }
-        a
+        iter.next().map(|first| {
+            let mut a = first.borrow().clone();
+            while let Some(next) = iter.next() {
+                a.op(next.borrow())
+            }
+            a
+        })
     }
 }
 
@@ -77,7 +83,7 @@ mod test {
     #[test]
     fn maxes() {
         let maxes = [Max(0), Max(4), Max(32), Max(8), Max(3), Max(0)];
-        assert!(Max::combine(&maxes) == Max(32));
+        assert!(Max::combine(&maxes) == Some(Max(32)));
     }
 
     #[test]

@@ -22,6 +22,7 @@ wasm-bindgen = { optional = true, version = "*" }
 smallvec = "0.6"
 seahash = "3.0"
 base64 = "0.11"
+num = "0.2"
 
 [dependencies.byteorder]
 features = ["i128"]

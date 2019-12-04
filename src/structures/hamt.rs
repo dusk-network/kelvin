@@ -3,9 +3,9 @@ use std::iter::Iterator;
 use std::mem;
 
 use crate::{
-    Compound, Content, Handle, HandleMut, HandleOwned, HandleRef, HandleType,
-    Method, Sink, Source, ValPath, ValPathMut, ValRef, ValRefMut,
-    VoidAnnotation,
+    annotations::Cardinality, Compound, Content, Handle, HandleMut,
+    HandleOwned, HandleRef, HandleType, Method, Sink, Source, ValPath,
+    ValPathMut, ValRef, ValRefMut,
 };
 use bytehash::ByteHash;
 use seahash::SeaHasher;
@@ -14,7 +14,7 @@ use std::hash::{Hash, Hasher};
 const N_BUCKETS: usize = 16;
 
 /// A hash array mapped trie
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct HAMT<L, H: ByteHash>([Handle<Self, H>; N_BUCKETS])
 where
     Self: Compound<H>;
@@ -81,7 +81,7 @@ enum Removed<L> {
 
 impl<K, V, H> HAMT<(K, V), H>
 where
-    K: Content<H> + Hash,
+    K: Content<H> + Hash + Eq,
     V: Content<H>,
     H: ByteHash,
 {
@@ -105,7 +105,7 @@ where
         let s = calculate_slot(h, depth);
         let slot = &mut self.0[s];
 
-        Ok(match slot.inner_mut()? {
+        let result = match slot.inner_mut()? {
             HandleMut::None => {
                 slot.replace(HandleOwned::Leaf((k, v)));
                 None
@@ -128,7 +128,9 @@ where
                 }
             }
             HandleMut::Node(node) => node.sub_insert(depth + 1, h, k, v)?,
-        })
+        };
+        slot.update_annotation();
+        Ok(result)
     }
 
     /// Returns a reference to a value in the map, if any
@@ -167,9 +169,7 @@ where
         match slot.inner_mut()? {
             HandleMut::None => return Ok(Removed::None),
             HandleMut::Leaf((place_k, _)) => {
-                if place_k == k {
-                    // pass on control flow
-                } else {
+                if place_k != k {
                     return Ok(Removed::None);
                 }
             }
@@ -177,7 +177,10 @@ where
                 Removed::Collapse(removed, reinsert) => {
                     collapse = Some((removed, reinsert));
                 }
-                a => return Ok(a),
+                a => {
+                    slot.update_annotation();
+                    return Ok(a);
+                }
             },
         };
 
@@ -193,7 +196,8 @@ where
                 .expect("leaf checked in previous match");
         }
 
-        // at depth > 0, we might have to collapse the branch
+        // we might have to collapse the branch
+        // removing singletons and re-inserting does not change the annotation
         if depth > 0 {
             match self.remove_singleton()? {
                 Some(kv) => Ok(Removed::Collapse(removed_leaf, kv)),
@@ -278,7 +282,7 @@ where
     L: Content<H>,
 {
     type Leaf = L;
-    type Annotation = VoidAnnotation;
+    type Annotation = Cardinality<u64>;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
         &mut self.0
