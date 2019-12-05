@@ -5,16 +5,16 @@
 macro_rules! quickcheck_map {
     ($new_map:expr) => {
         // mod inner_mod {
-        use tempfile::tempdir;
+        use $crate::tests::tempfile::tempdir;
 
         #[allow(unused)]
         use std::collections::HashMap;
 
+        use $crate::tests::quickcheck::{quickcheck, Arbitrary, Gen};
         #[allow(unused)]
-        use crate::{annotations::Count, KeyValIterable, LeafIterable, Store};
-        use quickcheck::{quickcheck, Arbitrary, Gen};
+        use $crate::{annotations::Count, KeyValIterable, LeafIterable, Store};
 
-        use rand::Rng;
+        use $crate::tests::rand::Rng;
 
         const KEY_SPACE: u8 = 20;
 

@@ -1,7 +1,12 @@
 //! Kelvin, a Merkle-tree tooklit and backend
 #![warn(missing_docs)]
 
-mod annotations;
+/// Test helpers
+pub mod tests;
+
+/// A collection of tree annotations
+pub mod annotations;
+
 mod backend;
 mod branch;
 mod children;
@@ -14,8 +19,6 @@ mod search;
 mod sink;
 mod source;
 mod store;
-mod structures;
-mod tests;
 mod unsafe_branch;
 
 pub use crate::annotations::{Associative, Combine, VoidAnnotation};
@@ -37,16 +40,5 @@ pub use crate::store::{Shared, Store};
 // Re-export
 pub use bytehash::{Blake2b, ByteHash};
 
-// structures
-pub use structures::HAMT;
-
-// default types
-
-/// Map using HAMT and Blake2b
-pub type Map<K, V> = HAMT<(K, V), Blake2b>;
 /// Persistant store using Blake2b
 pub type DefaultStore = Store<Blake2b>;
-
-// test infra
-#[cfg(test)]
-pub use tests::quickcheck_map;

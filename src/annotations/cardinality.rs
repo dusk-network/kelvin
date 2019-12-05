@@ -8,6 +8,7 @@ use num::{One, Zero};
 use super::Associative;
 use crate::{Compound, Content, Sink, Source};
 
+/// Annotation that keeps track of total number of leaves
 #[derive(PartialEq, Eq, Clone)]
 pub struct Cardinality<T>(T);
 
@@ -39,7 +40,9 @@ impl<H: ByteHash, T: Content<H>> Content<H> for Cardinality<T> {
     }
 }
 
+/// Method for counting the number of elements in the collection
 pub trait Count<U, H> {
+    /// Returns the number of elements in collection
     fn count(&self) -> U;
 }
 

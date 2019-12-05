@@ -2,12 +2,11 @@ use std::io;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::{
-    annotations::Cardinality, Children, Compound, Content, Handle, HandleMut,
-    HandleOwned, HandleRef, HandleType, Method, Sink, Source, ValPath,
-    ValPathMut, ValRef, ValRefMut,
+use kelvin::{
+    annotations::Cardinality, ByteHash, Children, Compound, Content, Handle,
+    HandleMut, HandleOwned, HandleRef, HandleType, Method, Sink, Source,
+    ValPath, ValPathMut, ValRef, ValRefMut,
 };
-use bytehash::ByteHash;
 use seahash::SeaHasher;
 use std::hash::{Hash, Hasher};
 
@@ -295,8 +294,9 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::quickcheck_map;
-    use bytehash::Blake2b;
+
+    use kelvin::quickcheck_map;
+    use kelvin::Blake2b;
 
     #[test]
     fn trivial_map() {
