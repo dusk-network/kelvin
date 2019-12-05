@@ -255,8 +255,7 @@ where
         })
     }
 
-    // Should NOT be called directly by datastructure code
-    pub(crate) fn _replace(
+    pub(crate) fn replace(
         &mut self,
         with: HandleOwned<C, H>,
     ) -> Option<C::Leaf> {
@@ -295,7 +294,7 @@ where
     }
 
     // Should NOT be called directly by datastructure code
-    pub(crate) fn _inner_mut(&mut self) -> io::Result<HandleMut<C, H>> {
+    pub(crate) fn inner_mut(&mut self) -> io::Result<HandleMut<C, H>> {
         Ok(match self.0 {
             HandleInner::None => HandleMut::None,
             HandleInner::Leaf(ref mut l) => HandleMut::Leaf(l),
@@ -306,7 +305,7 @@ where
                 {
                     let restored = snap.restore()?;
                     *self = Handle(HandleInner::Node(Box::new(restored), ann));
-                    return self._inner_mut();
+                    return self.inner_mut();
                 } else {
                     unreachable!()
                 }
