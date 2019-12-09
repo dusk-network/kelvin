@@ -87,7 +87,7 @@ where
         key: &K,
     ) -> io::Result<Option<Self>>
     where
-        M: Method,
+        M: Method<C, H>,
     {
         Ok(Branch::new(node, method)?.filter(|b| b.key() == key).map(
             |branch| ValPath {
@@ -112,7 +112,7 @@ where
         key: &K,
     ) -> io::Result<Option<Self>>
     where
-        M: Method,
+        M: Method<C, H>,
     {
         Ok(BranchMut::new(node, method)?
             .filter(|b| b.key() == key)
@@ -224,7 +224,7 @@ impl<'a, C, K, V, M, H> Iterator for ValIter<'a, C, K, V, M, H>
 where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
-    M: 'a + Method,
+    M: 'a + Method<C, H>,
     K: 'a,
     V: 'a,
     H: ByteHash,
@@ -240,7 +240,7 @@ impl<'a, C, K, V, M, H> Iterator for ValIterMut<'a, C, K, V, M, H>
 where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
-    M: 'a + Method,
+    M: 'a + Method<C, H>,
     K: 'a,
     V: 'a,
     H: ByteHash,
@@ -256,7 +256,7 @@ impl<'a, C, K, V, M, H> Iterator for KeyIter<'a, C, K, V, M, H>
 where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
-    M: 'a + Method,
+    M: 'a + Method<C, H>,
     K: 'a,
     V: 'a,
     H: ByteHash,
