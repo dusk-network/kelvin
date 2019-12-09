@@ -21,7 +21,9 @@ mod source;
 mod store;
 mod unsafe_branch;
 
-pub use crate::annotations::{Associative, Combine, VoidAnnotation};
+pub use crate::annotations::{
+    Annotation, Associative, Combine, VoidAnnotation,
+};
 pub use crate::backend::Backend;
 pub use crate::branch::{Branch, BranchMut};
 pub use crate::children::Children;

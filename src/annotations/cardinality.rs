@@ -8,35 +8,43 @@ use num::{One, Zero};
 use super::Associative;
 use crate::{Compound, Content, Sink, Source};
 
+/// Trait group for Cardinality inner type
+pub trait Counter: AddAssign + Copy + Zero + One {}
+impl<T> Counter for T where T: AddAssign + Copy + Zero + One {}
+
 /// Annotation that keeps track of total number of leaves
 #[derive(PartialEq, Eq, Clone)]
 pub struct Cardinality<T>(T);
 
 impl<T> Associative for Cardinality<T>
 where
-    T: AddAssign + Copy,
+    T: Counter,
 {
     fn op(&mut self, b: &Self) {
         self.0 += b.0;
     }
 }
 
-// Leaves are always 1
-impl<T, U> From<&T> for Cardinality<U>
+impl<Anything, U> From<&Anything> for Cardinality<U>
 where
-    U: One,
+    U: Counter,
 {
-    fn from(_: &T) -> Self {
+    fn from(_: &Anything) -> Self {
         Cardinality(U::one())
     }
 }
 
-impl<H: ByteHash, T: Content<H>> Content<H> for Cardinality<T> {
+impl<H, U> Content<H> for Cardinality<U>
+where
+    H: ByteHash,
+    U: Content<H> + Counter,
+{
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
         self.0.persist(sink)
     }
+
     fn restore(source: &mut Source<H>) -> io::Result<Self> {
-        Ok(Cardinality(T::restore(source)?))
+        Ok(Cardinality(U::restore(source)?))
     }
 }
 
@@ -48,7 +56,7 @@ pub trait Count<U, H> {
 
 impl<U, C, H> Count<U, H> for C
 where
-    U: Zero + Clone,
+    U: Counter,
     H: ByteHash,
     C: Compound<H>,
     C::Annotation: Borrow<Cardinality<U>>,

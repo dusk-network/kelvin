@@ -216,7 +216,7 @@ where
         self.node.handle(self.ofs)
     }
 
-    fn search<M: Method>(&mut self, method: &mut M) -> io::Result<Found> {
+    fn search<M: Method<C, H>>(&mut self, method: &mut M) -> io::Result<Found> {
         let node = self.inner_immutable();
         let children = node.children();
         if self.ofs > children.len() - 1 {
@@ -263,7 +263,10 @@ where
         UnsafeBranch(vec)
     }
 
-    pub fn search<M: Method>(&mut self, method: &mut M) -> io::Result<()> {
+    pub fn search<M: Method<C, H>>(
+        &mut self,
+        method: &mut M,
+    ) -> io::Result<()> {
         loop {
             if let Some(last) = self.0.last_mut() {
                 let mut push = None;

@@ -1,13 +1,20 @@
-mod cardinality;
-
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::io;
 
 use bytehash::ByteHash;
 
-pub use cardinality::{Cardinality, Count};
+pub use cardinality::{Cardinality, Count, Counter};
+pub use key::{Key, KeyType};
 
 use crate::{Content, Sink, Source};
+
+mod annotation_macro;
+mod cardinality;
+mod key;
+
+pub trait Annotation<A: Clone> {
+    fn annotation(&self) -> Option<Cow<A>>;
+}
 
 /// Defines the associative operation for the annotation type
 pub trait Associative {
@@ -15,29 +22,35 @@ pub trait Associative {
     fn op(&mut self, b: &Self);
 }
 
-/// Defines how multiple annotation types are combined
-pub trait Combine: Sized {
-    /// Combines n>1 elements into one
-    fn combine(
-        elements: impl IntoIterator<Item = impl Borrow<Self>>,
-    ) -> Option<Self>;
+/// Defines how annotation types are combined. Prefer using `Associative` when possible.
+pub trait Combine<A>: Sized + Clone {
+    /// Combines n annotation elements into one
+    fn combine<E>(elements: &[E]) -> Option<Self>
+    where
+        A: Borrow<Self> + Clone,
+        E: Annotation<A>;
 }
 
-impl<T> Combine for T
+impl<A, T> Combine<A> for T
 where
-    T: Associative + Clone,
+    Self: Associative + Clone,
 {
-    fn combine(
-        elements: impl IntoIterator<Item = impl Borrow<Self>>,
-    ) -> Option<Self> {
-        let mut iter = elements.into_iter();
+    fn combine<E>(elements: &[E]) -> Option<T>
+    where
+        A: Borrow<Self> + Clone,
+        E: Annotation<A>,
+    {
+        let mut iter = elements.iter().filter_map(Annotation::annotation);
 
         iter.next().map(|first| {
-            let mut a = first.borrow().clone();
+            //let a: &A = first.borrow();
+            let t: &T = (*first).borrow().borrow();
+            let mut s: T = t.clone();
             while let Some(next) = iter.next() {
-                a.op(next.borrow())
+                let a: &A = next.borrow();
+                s.op(a.borrow())
             }
-            a
+            s
         })
     }
 }
@@ -62,36 +75,5 @@ impl<H: ByteHash> Content<H> for VoidAnnotation {
     }
     fn restore(_: &mut Source<H>) -> io::Result<Self> {
         Ok(VoidAnnotation)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[derive(PartialEq, Eq, Clone)]
-    struct Max(usize);
-
-    impl Associative for Max {
-        fn op(&mut self, b: &Self) {
-            if b.0 > self.0 {
-                self.0 = b.0
-            }
-        }
-    }
-
-    #[test]
-    fn maxes() {
-        let maxes = [Max(0), Max(4), Max(32), Max(8), Max(3), Max(0)];
-        assert!(Max::combine(&maxes) == Some(Max(32)));
-    }
-
-    #[test]
-    fn max() {
-        let mut a = Max(10);
-        let b = Max(20);
-
-        a.op(&b);
-        assert!(a.0 == 20);
     }
 }
