@@ -19,7 +19,7 @@ where
 impl<'a, C, M, H> Iterator for LeafIter<'a, C, M, H>
 where
     C: Compound<H>,
-    M: 'a + Method,
+    M: 'a + Method<C, H>,
     H: ByteHash,
 {
     type Item = io::Result<&'a C::Leaf>;
@@ -73,7 +73,7 @@ where
 impl<'a, C, M, H> Iterator for LeafIterMut<'a, C, M, H>
 where
     C: Compound<H>,
-    M: 'a + Method,
+    M: 'a + Method<C, H>,
     H: ByteHash,
 {
     type Item = io::Result<&'a mut C::Leaf>;

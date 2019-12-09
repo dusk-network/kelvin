@@ -6,6 +6,7 @@ use std::sync::Arc;
 use bytehash::ByteHash;
 use cache::Cached;
 
+use crate::annotations::Annotation;
 use crate::compound::Compound;
 use crate::content::Content;
 use crate::sink::Sink;
@@ -327,5 +328,15 @@ where
         } else {
             // no-op
         }
+    }
+}
+
+impl<C, H> Annotation<C::Annotation> for Handle<C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    fn annotation(&self) -> Option<Cow<C::Annotation>> {
+        self.annotation()
     }
 }

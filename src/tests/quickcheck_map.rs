@@ -9,6 +9,7 @@ macro_rules! quickcheck_map {
 
         #[allow(unused)]
         use std::collections::HashMap;
+        use $crate::tests::CorrectEmptyState;
 
         use $crate::tests::quickcheck::{quickcheck, Arbitrary, Gen};
         #[allow(unused)]
