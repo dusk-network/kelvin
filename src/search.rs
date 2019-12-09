@@ -3,19 +3,24 @@ use crate::handle::{Handle, HandleType};
 use crate::ByteHash;
 
 /// Trait for searching through tree structured data
-pub trait Method: Clone {
+pub trait Method<C, H>: Clone
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
     /// Select among the handles of the node
-    fn select<C, H>(&mut self, handles: &[Handle<C, H>]) -> Option<usize>
-    where
-        C: Compound<H>,
-        H: ByteHash;
+    fn select(&mut self, handles: &[Handle<C, H>]) -> Option<usize>;
 }
 
 #[derive(Clone)]
 pub struct First;
 
-impl Method for First {
-    fn select<C, H>(&mut self, handles: &[Handle<C, H>]) -> Option<usize>
+impl<C, H> Method<C, H> for First
+where
+    H: ByteHash,
+    C: Compound<H>,
+{
+    fn select(&mut self, handles: &[Handle<C, H>]) -> Option<usize>
     where
         C: Compound<H>,
         H: ByteHash,

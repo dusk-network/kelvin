@@ -60,12 +60,12 @@ where
     }
 }
 
-impl<C, H> Method<C, H> for HAMTSearch
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    fn select(&mut self, _: &[Handle<C, H>]) -> Option<usize> {
+impl Method for HAMTSearch {
+    fn select<C, H>(&mut self, _: &[Handle<C, H>]) -> Option<usize>
+    where
+        C: Compound<H>,
+        H: ByteHash,
+    {
         let slot = calculate_slot(self.hash, self.depth);
         self.depth += 1;
         Some(slot)
@@ -195,6 +195,7 @@ where
             }
         }
         // we might have to collapse the branch
+        // removing singletons and re-inserting does not change the annotation
         if depth > 0 {
             match self.remove_singleton()? {
                 Some(kv) => Ok(Removed::Collapse(removed_leaf, kv)),
@@ -220,6 +221,17 @@ where
             Ok(self.0.slot_mut(idx).replace(HandleOwned::None))
         } else {
             Ok(None)
+        }
+    }
+
+    #[cfg(test)]
+    #[doc(hidden)]
+    pub fn assert_correct_empty_state(&self) {
+        for child in self.0.iter() {
+            match child.handle_type() {
+                HandleType::None => (),
+                _ => panic!("invalid empty state"),
+            }
         }
     }
 }

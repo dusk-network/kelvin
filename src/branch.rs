@@ -18,12 +18,12 @@ where
     H: ByteHash,
 {
     /// Attempt to construct a branch with the given search method
-    pub fn new<M: Method>(
+    pub fn new<M: Method<C, H>>(
         node: &'a C,
         method: &mut M,
     ) -> io::Result<Option<Self>>
     where
-        M: Method,
+        M: Method<C, H>,
     {
         let mut inner = UnsafeBranch::new_cached(Cached::Borrowed(node));
         inner.search(method)?;
@@ -37,7 +37,7 @@ where
     /// Search for the next value in the branch, using `method`
     ///
     /// Takes self by value, and returns the updated branch or `None`
-    pub fn search<M: Method>(
+    pub fn search<M: Method<C, H>>(
         mut self,
         method: &mut M,
     ) -> io::Result<Option<Self>> {
@@ -78,7 +78,7 @@ where
     ///
     pub fn new<M>(node: &'a mut C, method: &mut M) -> io::Result<Option<Self>>
     where
-        M: Method,
+        M: Method<C, H>,
     {
         let mut inner = UnsafeBranch::new_mutable(node);
         inner.search(method)?;
@@ -92,7 +92,7 @@ where
     /// Search for the next value in the branch, using `method`
     ///
     /// Takes self by value, and returns the updated branch or `None`
-    pub fn search<M: Method>(
+    pub fn search<M: Method<C, H>>(
         mut self,
         method: &mut M,
     ) -> io::Result<Option<Self>> {
