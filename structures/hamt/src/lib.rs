@@ -3,9 +3,11 @@ use std::iter::Iterator;
 use std::mem;
 
 use kelvin::{
-    annotations::Cardinality, ByteHash, Children, Compound, Content, Handle,
-    HandleMut, HandleOwned, HandleRef, HandleType, Method, Sink, Source,
-    ValPath, ValPathMut, ValRef, ValRefMut,
+    annotation,
+    annotations::{Cardinality, Key, KeyType},
+    ByteHash, Children, Compound, Content, Handle, HandleMut, HandleOwned,
+    HandleRef, HandleType, Method, Sink, Source, ValPath, ValPathMut, ValRef,
+    ValRefMut,
 };
 use seahash::SeaHasher;
 use std::hash::{Hash, Hasher};
@@ -106,24 +108,26 @@ where
 
         Ok(match slot.inner_mut()? {
             HandleMut::None => {
-                slot.replace(HandleOwned::Leaf((k, v)));
+                slot.replace(HandleOwned::Leaf((k, v)))?;
                 None
             }
             HandleMut::Leaf((ref old_k, ref mut old_v)) => {
                 if old_k == &k {
                     Some(mem::replace(old_v, v))
                 } else {
-                    let (old_k, old_v) = slot
-                        .replace(HandleOwned::None)
-                        .expect("Replace should return leaf");
+                    if let HandleOwned::Leaf((old_k, old_v)) =
+                        slot.replace(HandleOwned::None)?
+                    {
+                        let old_h = hash(&old_k);
 
-                    let old_h = hash(&old_k);
-
-                    let mut new_node = HAMT::new();
-                    new_node.sub_insert(depth + 1, h, k, v)?;
-                    new_node.sub_insert(depth + 1, old_h, old_k, old_v)?;
-                    slot.replace(HandleOwned::Node(new_node));
-                    None
+                        let mut new_node = HAMT::new();
+                        new_node.sub_insert(depth + 1, h, k, v)?;
+                        new_node.sub_insert(depth + 1, old_h, old_k, old_v)?;
+                        slot.replace(HandleOwned::Node(new_node))?;
+                        None
+                    } else {
+                        unreachable!()
+                    }
                 }
             }
             HandleMut::Node(node) => node.sub_insert(depth + 1, h, k, v)?,
@@ -187,11 +191,13 @@ where
             // lower level collapsed
             if let Some((removed, reinsert)) = collapse {
                 removed_leaf = removed;
-                slot.replace(HandleOwned::Leaf(reinsert));
+                slot.replace(HandleOwned::Leaf(reinsert))?;
             } else {
-                removed_leaf = slot
-                    .replace(HandleOwned::None)
-                    .expect("leaf checked in previous match");
+                if let HandleOwned::Leaf(l) = slot.replace(HandleOwned::None)? {
+                    removed_leaf = l
+                } else {
+                    unreachable!()
+                }
             }
         }
         // we might have to collapse the branch
@@ -217,7 +223,13 @@ where
             }
         }
         if let Some(idx) = singleton {
-            Ok(self.0.slot_mut(idx).replace(HandleOwned::None))
+            if let HandleOwned::Leaf(l) =
+                self.0.slot_mut(idx).replace(HandleOwned::None)?
+            {
+                Ok(Some(l))
+            } else {
+                unreachable!()
+            }
         } else {
             Ok(None)
         }
@@ -260,6 +272,13 @@ where
         }
         Ok(HAMT(bucket))
     }
+}
+
+annotation! {
+    struct HAMTAnnotation<K> {
+        cardinality: Cardinality<u64>,
+        key: Key<K>,
+    } where K: KeyType
 }
 
 impl<L, H> Compound<H> for HAMT<L, H>

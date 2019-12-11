@@ -40,7 +40,10 @@ where
     }
 
     /// Replace the handle with an owned one, returning the leaf if any
-    pub fn replace(&mut self, with: HandleOwned<C, H>) -> Option<C::Leaf> {
+    pub fn replace(
+        &mut self,
+        with: HandleOwned<C, H>,
+    ) -> io::Result<HandleOwned<C, H>> {
         self.0.replace(with)
     }
 }
