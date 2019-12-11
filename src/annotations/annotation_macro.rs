@@ -10,6 +10,10 @@ macro_rules! annotation {
 
     } => {
 
+        use std::borrow::Borrow as __Borrow;
+        use $crate::annotations::Annotation as __Annotation;
+        use $crate::annotations::Combine as __Combine;
+
         $pub struct $struct_name $( < $( $param ),* > )* {
             $ ( $ann_key : $ann_type ),*
         }
@@ -57,14 +61,14 @@ macro_rules! annotation {
             }
         }
 
-        impl<__A, $( $( $param ),* )* > Combine<__A> for $struct_name $( < $( $param ),* > )*
+        impl<__A, $( $( $param ),* )* > __Combine<__A> for $struct_name $( < $( $param ),* > )*
         where
-            $( __A: Borrow<$ann_type> ),* ,
+            $( __A: __Borrow<$ann_type> ),* ,
             $( $( $whereclause )* )?
         {
             fn combine<__E>(elements: &[__E] ) -> Option<Self>     where
-                __A: Borrow<Self> + Clone,
-                __E: Annotation<__A> {
+                __A: __Borrow<Self> + Clone,
+                __E: __Annotation<__A> {
                 Some($struct_name {
                     $(
                         $ann_key : if let Some(combined) = < $ann_type >::combine(elements) {
@@ -79,7 +83,7 @@ macro_rules! annotation {
 
         macro_rules! impl_borrow {
             ($sub_ann_key:ident : $sub_ann_type:ty) => {
-                impl<$( $( $param ),* )* > Borrow<$sub_ann_type>
+                impl<$( $( $param ),* )* > __Borrow<$sub_ann_type>
                     for $struct_name $( < $( $param ),* > )*
                     $( where $( $whereclause )* )? {
                     fn borrow(&self) -> & $sub_ann_type {
@@ -104,7 +108,7 @@ macro_rules! annotation {
 
         macro_rules! impl_borrow_ref {
             ($sub_ann_key:ident : $sub_ann_type:ty) => {
-                impl<'__a, $( $( $param ),* )* > Borrow<$sub_ann_type>
+                impl<'__a, $( $( $param ),* )* > __Borrow<$sub_ann_type>
                     for &'__a $struct_name $( < $( $param ),* > )*
                 {
                     fn borrow(&self) -> & $sub_ann_type {

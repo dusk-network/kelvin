@@ -25,6 +25,23 @@ where
     None,
 }
 
+impl<C, H> From<HandleOwned<C, H>> for HandleInner<C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    fn from(owned: HandleOwned<C, H>) -> Self {
+        match owned {
+            HandleOwned::None => HandleInner::None,
+            HandleOwned::Leaf(l) => HandleInner::Leaf(l),
+            HandleOwned::Node(c) => {
+                let ann = c.annotation().expect("Invalid empty owned node");
+                HandleInner::Node(Box::new(c), ann)
+            }
+        }
+    }
+}
+
 /// Represents the type of the handle
 pub enum HandleType {
     /// Empty handle
@@ -259,39 +276,13 @@ where
     pub(crate) fn replace(
         &mut self,
         with: HandleOwned<C, H>,
-    ) -> Option<C::Leaf> {
-        match with {
-            HandleOwned::None => {
-                if let HandleInner::Leaf(replaced) =
-                    mem::replace(&mut self.0, HandleInner::None)
-                {
-                    Some(replaced)
-                } else {
-                    None
-                }
-            }
-            HandleOwned::Leaf(leaf) => {
-                if let HandleInner::Leaf(replaced) =
-                    mem::replace(&mut self.0, HandleInner::Leaf(leaf))
-                {
-                    Some(replaced)
-                } else {
-                    None
-                }
-            }
-            HandleOwned::Node(node) => {
-                let ann =
-                    node.annotation().expect("Empty node handles are invalid");
-                if let HandleInner::Leaf(leaf) = mem::replace(
-                    &mut self.0,
-                    HandleInner::Node(Box::new(node), ann),
-                ) {
-                    Some(leaf)
-                } else {
-                    None
-                }
-            }
-        }
+    ) -> io::Result<HandleOwned<C, H>> {
+        Ok(match mem::replace(&mut self.0, with.into()) {
+            HandleInner::None => HandleOwned::None,
+            HandleInner::Leaf(l) => HandleOwned::Leaf(l),
+            HandleInner::Node(c, _) => HandleOwned::Node(*c),
+            _ => unimplemented!(),
+        })
     }
 
     // Should NOT be called directly by datastructure code
