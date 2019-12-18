@@ -5,9 +5,8 @@ use std::mem;
 use kelvin::{
     annotation,
     annotations::{Cardinality, Key, KeyType},
-    ByteHash, Children, Compound, Content, Handle, HandleMut, HandleOwned,
-    HandleRef, HandleType, Method, Sink, Source, ValPath, ValPathMut, ValRef,
-    ValRefMut,
+    ByteHash, Compound, Content, Handle, HandleMut, HandleOwned, HandleRef,
+    HandleType, Method, Sink, Source, ValPath, ValPathMut, ValRef, ValRefMut,
 };
 use seahash::SeaHasher;
 use std::hash::{Hash, Hasher};
@@ -104,11 +103,11 @@ where
         v: V,
     ) -> io::Result<Option<V>> {
         let s = calculate_slot(h, depth);
-        let mut slot = self.0.slot_mut(s);
+        let mut slot = self.0[s].inner_mut()?;
 
-        Ok(match slot.inner_mut()? {
+        Ok(match &mut *slot {
             HandleMut::None => {
-                slot.replace(HandleOwned::Leaf((k, v)))?;
+                slot.replace(HandleOwned::Leaf((k, v)));
                 None
             }
             HandleMut::Leaf((ref old_k, ref mut old_v)) => {
@@ -116,14 +115,14 @@ where
                     Some(mem::replace(old_v, v))
                 } else {
                     if let HandleOwned::Leaf((old_k, old_v)) =
-                        slot.replace(HandleOwned::None)?
+                        slot.replace(HandleOwned::None)
                     {
                         let old_h = hash(&old_k);
 
                         let mut new_node = HAMT::new();
                         new_node.sub_insert(depth + 1, h, k, v)?;
                         new_node.sub_insert(depth + 1, old_h, old_k, old_v)?;
-                        slot.replace(HandleOwned::Node(new_node))?;
+                        slot.replace(HandleOwned::Node(new_node));
                         None
                     } else {
                         unreachable!()
@@ -165,11 +164,11 @@ where
         let removed_leaf;
         {
             let s = calculate_slot(h, depth);
-            let mut slot = self.0.slot_mut(s);
+            let slot = &mut self.0[s];
 
             let mut collapse = None;
 
-            match slot.inner_mut()? {
+            match &mut *slot.inner_mut()? {
                 HandleMut::None => return Ok(Removed::None),
                 HandleMut::Leaf((place_k, _)) => {
                     if place_k != k {
@@ -191,9 +190,9 @@ where
             // lower level collapsed
             if let Some((removed, reinsert)) = collapse {
                 removed_leaf = removed;
-                slot.replace(HandleOwned::Leaf(reinsert))?;
+                slot.replace(HandleOwned::Leaf(reinsert));
             } else {
-                if let HandleOwned::Leaf(l) = slot.replace(HandleOwned::None)? {
+                if let HandleOwned::Leaf(l) = slot.replace(HandleOwned::None) {
                     removed_leaf = l
                 } else {
                     unreachable!()
@@ -223,9 +222,10 @@ where
             }
         }
         if let Some(idx) = singleton {
-            if let HandleOwned::Leaf(l) =
-                self.0.slot_mut(idx).replace(HandleOwned::None)?
+            if let HandleOwned::Leaf(l) = self.0[idx].replace(HandleOwned::None)
             {
+                println!("single!");
+
                 Ok(Some(l))
             } else {
                 unreachable!()

@@ -40,11 +40,14 @@ macro_rules! annotation {
 
         {
             fn persist(&mut self, sink: &mut Sink<__H>) -> io::Result<()> {
-                unimplemented!()
+                $( self.$ann_key.persist(sink)? ; )*
+                Ok(())
             }
-            /// Restore the type from a `Source`
+
             fn restore(source: &mut Source<__H>) -> io::Result<Self> {
-                unimplemented!()
+                Ok($struct_name {
+                    $( $ann_key : < $ann_type as Content<__H> >::restore(source)? , )*
+                })
             }
         }
 

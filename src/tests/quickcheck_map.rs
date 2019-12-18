@@ -248,5 +248,32 @@ macro_rules! quickcheck_map {
                 Count
             ]))
         }
+
+        #[test]
+        fn regression_remove_all() {
+            assert!(run_ops(vec![Insert(19, 45), Insert(7, 126), RemoveAll,]))
+        }
+
+        #[test]
+        fn regression_get() {
+            assert!(run_ops(vec![
+                Insert(16, 114),
+                Insert(6, 225),
+                Insert(17, 19),
+                Insert(9, 243),
+                Get(9)
+            ]))
+        }
+
+        #[test]
+        fn regression_merge() {
+            assert!(run_ops(vec![
+                Insert(19, 158),
+                Insert(18, 154),
+                Insert(2, 97),
+                Insert(13, 9),
+                Remove(19)
+            ]))
+        }
     };
 }
