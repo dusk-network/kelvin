@@ -275,5 +275,28 @@ macro_rules! quickcheck_map {
                 Remove(19)
             ]))
         }
+
+        #[test]
+        fn regression_removeall() {
+            assert!(run_ops(vec![
+                Insert(12, 142),
+                Insert(4, 252),
+                Insert(6, 47),
+                Insert(0, 15),
+                Insert(15, 122),
+                RemoveAll
+            ]))
+        }
+
+        #[test]
+        fn regression_ordering() {
+            assert!(run_ops(vec![
+                Insert(13, 113),
+                Insert(2, 209),
+                Insert(9, 151),
+                Insert(11, 56),
+                Get(11)
+            ]))
+        }
     };
 }
