@@ -4,7 +4,7 @@ use std::mem;
 
 use kelvin::{
     annotation,
-    annotations::{Cardinality, Key, KeyType},
+    annotations::{Cardinality, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleOwned, HandleRef,
     HandleType, Method, Sink, Source, ValPath, ValPathMut, ValRef, ValRefMut,
 };
@@ -224,8 +224,6 @@ where
         if let Some(idx) = singleton {
             if let HandleOwned::Leaf(l) = self.0[idx].replace(HandleOwned::None)
             {
-                println!("single!");
-
                 Ok(Some(l))
             } else {
                 unreachable!()
@@ -277,8 +275,8 @@ where
 annotation! {
     struct HAMTAnnotation<K> {
         cardinality: Cardinality<u64>,
-        key: Key<K>,
-    } where K: KeyType
+        key: MaxKey<K>,
+    } where K: MaxKeyType
 }
 
 impl<L, H> Compound<H> for HAMT<L, H>

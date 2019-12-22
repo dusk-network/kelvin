@@ -8,8 +8,8 @@ use arrayvec::ArrayVec;
 use kelvin::{
     annotation,
     annotations::{Cardinality, Counter, MaxKey, MaxKeyType},
-    ByteHash, Compound, Content, Handle, HandleMut, Method, Sink, Source,
-    ValPath, ValPathMut, ValRef, ValRefMut,
+    ByteHash, Compound, Content, Handle, HandleMut, HandleType, Method, Sink,
+    Source, ValPath, ValPathMut, ValRef, ValRefMut,
 };
 
 const N: usize = 2;
@@ -53,7 +53,7 @@ where
     C: Compound<H>,
     C::Annotation: Borrow<MaxKey<K>>,
     H: ByteHash,
-    K: Clone + Ord + std::fmt::Debug,
+    K: Clone + Ord,
 {
     fn select(&mut self, handles: &[Handle<C, H>]) -> Option<usize> {
         for (i, h) in handles.iter().enumerate() {
@@ -64,7 +64,13 @@ where
                 }
             }
         }
-        None
+        // Always select last element if node
+        let len = handles.len();
+        if len > 0 && handles[len - 1].handle_type() == HandleType::Node {
+            Some(len - 1)
+        } else {
+            None
+        }
     }
 }
 
@@ -85,12 +91,12 @@ where
 {
     Noop,
     Removed(C::Leaf),
-    Merge(C, C::Leaf),
+    Merge(C::Leaf),
 }
 
 impl<K, V, H> BTree<K, V, H>
 where
-    K: Content<H> + Ord + Eq + std::fmt::Debug,
+    K: Content<H> + Ord + Eq,
     V: Content<H>,
     H: ByteHash,
 {
@@ -101,11 +107,13 @@ where
 
     /// Insert key-value pair into the BTree, optionally returning expelled value
     pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
-        match self._insert(Handle::new_leaf((k, v)), 0)? {
+        let result = match self._insert(Handle::new_leaf((k, v)), 0)? {
             InsertResult::Ok => Ok(None),
             InsertResult::Replaced((_, v)) => Ok(Some(v)),
             InsertResult::Split(_) => unreachable!(),
-        }
+        };
+
+        result
     }
 
     fn _insert(
@@ -113,22 +121,21 @@ where
         mut handle: Handle<Self, H>,
         depth: usize,
     ) -> io::Result<InsertResult<Self, H>> {
-        println!("entry");
-
         /// Use an enum to get around borrow issues
         #[derive(Debug)]
         enum Action {
-            Append,
             Insert(usize),
             Replace(usize),
             Split(usize),
+            Placeholder,
         }
         // The default action
-        let mut action = Action::Append;
+        let mut action = Action::Placeholder;
 
         let annotation = &*handle.annotation().expect("invalid handle");
         let borrow: &MaxKey<K> = annotation.borrow();
         let ann_key: &K = &**borrow;
+        let len = self.0.len();
 
         match BTreeSearch(ann_key).select(self.children()) {
             Some(i) => match &mut *self.0[i].inner_mut()? {
@@ -138,6 +145,8 @@ where
                         action = Action::Replace(i);
                     } else if *key > *ann_key {
                         action = Action::Insert(i);
+                    } else if i + 1 == len {
+                        action = Action::Insert(i + 1);
                     }
                 }
                 HandleMut::Node(n) => {
@@ -146,8 +155,8 @@ where
 
                     let node_key: &MaxKey<K> = node_ann.borrow();
 
-                    // Recurse
-                    if **node_key >= *ann_key {
+                    // Recurse, also if it's the last node
+                    if **node_key >= *ann_key || i + 1 == len {
                         match n._insert(handle, depth + 1)? {
                             ok @ InsertResult::Ok => return Ok(ok),
                             replace @ InsertResult::Replaced(_) => {
@@ -161,20 +170,12 @@ where
                     }
                 }
             },
-            None => (),
+            None => action = Action::Insert(len),
         }
 
         loop {
-            println!("ACTION {:?}", action);
             match action {
-                Action::Append => {
-                    if !self.0.is_full() {
-                        self.0.push(handle);
-                        return Ok(InsertResult::Ok);
-                    } else {
-                        action = Action::Split(M - 1);
-                    }
-                }
+                Action::Placeholder => unreachable!("reached placeholder"),
                 Action::Replace(i) => {
                     let replaced =
                         mem::replace(&mut self.0[i], handle).into_leaf();
@@ -195,13 +196,13 @@ where
                     // # SPLIT CASE A
 
                     // [ 1, 3, 5 ]
-                    // [ 1 ] [ 3, 5 ]
-                    // [ 1, 2 ] [ 3, 5 ]
+                    // [ 0 ] [ 3, 5 ]
+                    // [ 0, 1 ] [ 3, 5 ]
 
                     // # SPLIT CASE B
 
                     // [ 1, 3, 5 ]
-                    // [ 1, 3 ] [ 5 ]
+                    // [ 1, 3 ] [ 4 ]
                     // [ 1, 3 ] [ 4, 5 ]
 
                     // The new (second) node is returned down the stack for merging
@@ -212,25 +213,20 @@ where
                     let popped =
                         self.0.pop().expect("attempt to split empty node");
 
-                    let result = if i < N {
+                    if i < N {
                         // CASE A
                         let second =
                             self.0.pop().expect("attempt to split empty node");
+
                         new_node.0.push(second);
                         new_node.0.push(popped);
-                        self._insert(handle, depth + 1)?
+
+                        self.0.insert(i, handle);
                     } else {
                         // CASE B
                         new_node.0.push(popped);
-                        new_node._insert(handle, depth + 1)?
-                    };
-
-                    // recursive insert should always succeed in this case
-                    debug_assert!(if let InsertResult::Ok = result {
-                        true
-                    } else {
-                        false
-                    });
+                        new_node.0.insert(i - 2, handle);
+                    }
 
                     debug_assert!(self.0.len() == N);
                     debug_assert!(new_node.0.len() == N);
@@ -238,7 +234,6 @@ where
                     let new_handle = Handle::new_node(new_node);
 
                     if depth == 0 {
-                        println!("new root");
                         // if we're on the top level, we create a new root.
                         let old_root = mem::replace(self, Self::new());
                         self.0.push(Handle::new_node(old_root));
@@ -248,8 +243,6 @@ where
                     } else {
                         return Ok(InsertResult::Split(new_handle));
                     }
-
-                    // make sure `self` has space by popping and storing in new node
                 }
             }
         }
@@ -269,10 +262,10 @@ where
         k: &K,
         depth: usize,
     ) -> io::Result<RemoveResult<Self, H>> {
-        enum Action<K: Content<H> + Ord, V: Content<H>, H: ByteHash> {
+        enum Action<L> {
             Noop,
             Remove(usize),
-            Merge(BTree<K, V, H>, (K, V), usize),
+            Merge(usize, L),
         }
         // The default action
         let mut action = Action::Noop;
@@ -298,8 +291,8 @@ where
                                 RemoveResult::Removed(leaf) => {
                                     return Ok(RemoveResult::Removed(leaf))
                                 }
-                                RemoveResult::Merge(handle, removed) => {
-                                    action = Action::Merge(handle, removed, i)
+                                RemoveResult::Merge(removed_leaf) => {
+                                    action = Action::Merge(i, removed_leaf)
                                 }
                             }
                         }
@@ -312,22 +305,98 @@ where
         match action {
             Action::Remove(i) => {
                 let removed = self.0.remove(i);
-
+                // are we under-filled at a depth of at least 1?
                 if self.0.len() < N && depth > 0 {
-                    let to_merge = mem::replace(self, Self::new());
-                    Ok(RemoveResult::Merge(to_merge, removed.into_leaf()))
+                    Ok(RemoveResult::Merge(removed.into_leaf()))
                 } else {
                     Ok(RemoveResult::Removed(removed.into_leaf()))
                 }
             }
             Action::Noop => Ok(RemoveResult::Noop),
-            Action::Merge(to_merge, leaf, i) => {
-                self.0.remove(i);
-                match self._insert(Handle::new_node(to_merge), depth)? {
-                    InsertResult::Split(_) => unreachable!("invalid split"),
-                    _ => (),
+            Action::Merge(i, leaf) => {
+                // Case A
+                // [0, 1] [2] ... -> [0, 1, 2] ...
+
+                // Case B
+                // [0, 1, 2] [3] ... -> [0, 1] [2, 3] ...
+
+                // Case C
+                // [0] [1, 2] ... -> [0, 1, 2] ...
+
+                // Case D
+                // [0] [1, 2, 3] ... -> [0, 1] [2, 3] ...
+
+                // in order to keep the borrow checker happy and do minimal
+                // lookups, we first replace the to-be-merged node with an empty one.
+
+                let mut to_merge =
+                    mem::replace(&mut self.0[i], Handle::default()).into_node();
+
+                // Is there a node before this one?
+                if i > 0 {
+                    // Case A/B
+                    match &mut *self.0[i - 1].inner_mut()? {
+                        HandleMut::Node(n) => {
+                            if n.0.len() == N {
+                                // Case A - move from to_merge into prev node
+                                let popped = to_merge
+                                    .0
+                                    .pop()
+                                    .expect("attempt to merge empty node");
+                                n.0.push(popped)
+                            } else {
+                                // Case B - pop from node and prepend to to_merge
+                                let popped =
+                                    n.0.pop().expect("len guaranteed > 0");
+                                to_merge.0.insert(0, popped);
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                } else {
+                    // Case C/D
+                    match &mut *self.0[i + 1].inner_mut()? {
+                        HandleMut::Node(n) => {
+                            if n.0.len() == N {
+                                // Case C
+                                let popped = to_merge
+                                    .0
+                                    .pop()
+                                    .expect("attempt to merge empty node");
+                                // prepend into next node
+                                n.0.insert(0, popped)
+                            } else {
+                                // Case D
+                                let removed = n.0.remove(0);
+                                to_merge.0.push(removed);
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
                 }
-                Ok(RemoveResult::Removed(leaf))
+
+                // did we empty the to_merge node?
+                if to_merge.0.len() > 0 {
+                    // swap back
+                    self.0[i] = Handle::new_node(to_merge);
+                    Ok(RemoveResult::Removed(leaf))
+                } else {
+                    // remove empty node
+                    self.0.remove(i);
+                    if self.0.len() < N {
+                        if depth > 0 {
+                            Ok(RemoveResult::Merge(leaf))
+                        } else {
+                            // replace root
+                            let singleton =
+                                mem::replace(&mut self.0[0], Handle::default());
+                            *self = singleton.into_node();
+                            Ok(RemoveResult::Removed(leaf))
+                        }
+                    } else {
+                        Ok(RemoveResult::Removed(leaf))
+                    }
+                }
             }
         }
     }
@@ -420,10 +489,8 @@ mod test {
         let bigger = 1024;
         for i in 0..bigger {
             let i = bigger - i - 1;
-            println!("insert {}", i);
             h.insert(i, i).unwrap();
         }
-        println!("inserting done");
         for i in 0..bigger {
             assert_eq!(*h.get(&i).unwrap().unwrap(), i);
         }
@@ -432,14 +499,25 @@ mod test {
     #[test]
     fn insert_remove() {
         let mut h = BTree::<_, _, Blake2b>::new();
-        let bigger = 4;
+        let bigger = 1024;
         for i in 0..bigger {
             let i = bigger - i - 1;
-            println!("insert {}", i);
             h.insert(i, i).unwrap();
         }
-        println!("inserting done");
         for i in 0..bigger {
+            assert_eq!(h.remove(&i).unwrap().unwrap(), i);
+        }
+    }
+
+    #[test]
+    fn insert_remove_reverse() {
+        let mut h = BTree::<_, _, Blake2b>::new();
+        let bigger = 1024;
+        for i in 0..bigger {
+            h.insert(i, i).unwrap();
+        }
+        for i in 0..bigger {
+            let i = bigger - i - 1;
             assert_eq!(h.remove(&i).unwrap().unwrap(), i);
         }
     }

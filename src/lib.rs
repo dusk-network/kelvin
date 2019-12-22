@@ -11,6 +11,7 @@ mod backend;
 mod branch;
 mod compound;
 mod content;
+mod debug_draw;
 mod handle;
 mod iter;
 mod map;
@@ -27,6 +28,7 @@ pub use crate::backend::Backend;
 pub use crate::branch::{Branch, BranchMut};
 pub use crate::compound::Compound;
 pub use crate::content::Content;
+pub use crate::debug_draw::DebugDraw;
 pub use crate::handle::{
     Handle, HandleMut, HandleOwned, HandleRef, HandleType,
 };

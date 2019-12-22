@@ -10,6 +10,7 @@ use cache::Cached;
 use crate::annotations::Annotation;
 use crate::compound::Compound;
 use crate::content::Content;
+use crate::debug_draw::DebugDraw;
 use crate::sink::Sink;
 use crate::source::Source;
 use crate::store::Snapshot;
@@ -275,7 +276,16 @@ where
         if let HandleInner::Leaf(l) = self.0 {
             l
         } else {
-            panic!("not a leaf")
+            panic!("Not a leaf")
+        }
+    }
+
+    /// Converts handle into leaf, panics on mismatching type
+    pub fn into_node(self) -> C {
+        if let HandleInner::Node(n, _) = self.0 {
+            *n
+        } else {
+            panic!("Not a node")
         }
     }
 
@@ -414,5 +424,22 @@ where
 {
     fn annotation(&self) -> Option<Cow<C::Annotation>> {
         self.annotation()
+    }
+}
+
+impl<C, H> Handle<C, H>
+where
+    C: Compound<H>,
+    C::Leaf: std::fmt::Debug,
+    H: ByteHash,
+{
+    /// Draw contents of handle, for debug use
+    pub fn draw(&self) -> String {
+        match self.0 {
+            HandleInner::None => format!("□ "),
+            HandleInner::Leaf(ref l) => format!("{:?} ", l),
+            HandleInner::Node(ref n, _) => format!("{}", n.draw()),
+            _ => unimplemented!(),
+        }
     }
 }
