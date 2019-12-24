@@ -48,6 +48,7 @@ macro_rules! annotation {
                 Ok($struct_name {
                     $( $ann_key : < $ann_type as Content<__H> >::restore(source)? , )*
                 })
+
             }
         }
 
@@ -87,6 +88,7 @@ macro_rules! annotation {
         macro_rules! impl_borrow {
             ($sub_ann_key:ident : $sub_ann_type:ty) => {
                 impl<$( $( $param ),* )* > __Borrow<$sub_ann_type>
+
                     for $struct_name $( < $( $param ),* > )*
                     $( where $( $whereclause )* )? {
                     fn borrow(&self) -> & $sub_ann_type {
@@ -112,6 +114,7 @@ macro_rules! annotation {
         macro_rules! impl_borrow_ref {
             ($sub_ann_key:ident : $sub_ann_type:ty) => {
                 impl<'__a, $( $( $param ),* )* > __Borrow<$sub_ann_type>
+
                     for &'__a $struct_name $( < $( $param ),* > )*
                 {
                     fn borrow(&self) -> & $sub_ann_type {

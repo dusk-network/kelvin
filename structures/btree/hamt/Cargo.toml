@@ -1,0 +1,9 @@
+[package]
+name = "kelvin-hamt"
+version = "0.1.0"
+authors = ["Kristoffer Ström <kristoffer@dusk.network>"]
+edition = "2018"
+
+[dependencies]
+kelvin = { path = "../.." }
+seahash = "3.0"
