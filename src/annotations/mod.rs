@@ -4,12 +4,14 @@ use std::io;
 use bytehash::ByteHash;
 
 pub use cardinality::{Cardinality, Count, Counter};
+
 pub use max_key::{MaxKey, MaxKeyType};
 
 use crate::{Content, Sink, Source};
 
 mod annotation_macro;
 mod cardinality;
+
 mod max_key;
 
 /// Wrapper trait for hiding generics when working on select functions

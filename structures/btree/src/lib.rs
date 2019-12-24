@@ -413,6 +413,10 @@ where
     ) -> io::Result<Option<impl ValRefMut<V>>> {
         ValPathMut::new(self, &mut BTreeSearch::from(k), k)
     }
+    /// Remove element with given key, returning it.
+    pub fn remove(&mut self, k: &K) -> io::Result<Option<V>> {
+        unimplemented!()
+    }
 }
 
 impl<K, V, H> Content<H> for BTree<K, V, H>
