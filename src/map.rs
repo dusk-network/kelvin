@@ -7,6 +7,7 @@ use owning_ref::{OwningRef, OwningRefMut, StableAddress};
 
 use crate::branch::{Branch, BranchMut};
 use crate::compound::Compound;
+use crate::content::Content;
 use crate::iter::{LeafIter, LeafIterMut};
 use crate::search::{First, Method};
 
@@ -305,4 +306,29 @@ where
 impl<'a, T, V> ValRefMut<'a, V> for T where
     T: StableAddress + Deref<Target = V> + 'a + DerefMut + 'a
 {
+}
+
+/// Collection can be read as a map
+pub trait Map<'a, K, V, H>
+where
+    Self: Compound<H>,
+    Self::Leaf: KVPair<K, V>,
+    K: Content<H> + Eq + 'a,
+    H: ByteHash,
+{
+    /// The method used to search for keys in the structure
+    type KeySearch: Method<Self, H> + From<&'a K>;
+
+    /// Returns a reference to a value in the map, if any
+    fn get(&self, k: &'a K) -> io::Result<Option<ValPath<K, V, Self, H>>> {
+        ValPath::new(self, &mut Self::KeySearch::from(k), k)
+    }
+
+    /// Returns a reference to a mutable value in the map, if any
+    fn get_mut(
+        &mut self,
+        k: &'a K,
+    ) -> io::Result<Option<ValPathMut<K, V, Self, H>>> {
+        ValPathMut::new(self, &mut Self::KeySearch::from(k), k)
+    }
 }

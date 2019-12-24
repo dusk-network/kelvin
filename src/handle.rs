@@ -80,21 +80,13 @@ where
 /// while still keeping track of a raw pointer to the original handle.
 /// This is to ensure that the associated annotations are automatically
 /// updated on mutable access.
-pub struct HandleMutWrap<'a, C, H>(*mut Handle<C, H>, HandleMut<'a, C, H>)
-where
-    C: Compound<H>,
-    H: ByteHash;
-
-impl<'a, C, H> HandleMutWrap<'a, C, H>
+pub struct HandleMutWrap<'a, C, H>
 where
     C: Compound<H>,
     H: ByteHash,
 {
-    fn new(handle: &'a mut Handle<C, H>) -> io::Result<Self> {
-        let raw = handle as *mut Handle<C, H>;
-        let inner = handle._inner_mut()?;
-        Ok(HandleMutWrap(raw, inner))
-    }
+    annotation: Option<&'a mut C::Annotation>,
+    inner: HandleMut<'a, C, H>,
 }
 
 impl<'a, C, H> Deref for HandleMutWrap<'a, C, H>
@@ -105,7 +97,7 @@ where
     type Target = HandleMut<'a, C, H>;
 
     fn deref(&self) -> &Self::Target {
-        &self.1
+        &self.inner
     }
 }
 
@@ -115,24 +107,7 @@ where
     H: ByteHash,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.1
-    }
-}
-
-impl<'a, C, H> HandleMutWrap<'a, C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    pub fn replace(&mut self, with: HandleOwned<C, H>) -> HandleOwned<C, H> {
-        unsafe {
-            let replaced = (*self.0).replace(with);
-            // update inner struct
-            self.1 = (*self.0)._inner_mut().expect(
-                "HandleOwned never needs to do db lookup in _inner_mut",
-            );
-            replaced
-        }
+        &mut self.inner
     }
 }
 
@@ -142,7 +117,14 @@ where
     H: ByteHash,
 {
     fn drop(&mut self) {
-        unsafe { (*self.0).update_annotation() }
+        match (self.annotation.as_mut(), &self.inner) {
+            (Some(ref mut ann), HandleMut::Node(ref node)) => {
+                if let Some(annotation) = node.annotation() {
+                    ***ann = annotation
+                }
+            }
+            _ => (),
+        }
     }
 }
 
@@ -271,6 +253,11 @@ where
         Handle(HandleInner::Node(node, ann))
     }
 
+    /// Constructs a new empty node Handle
+    pub fn new_empty() -> Handle<C, H> {
+        Handle(HandleInner::None)
+    }
+
     /// Converts handle into leaf, panics on mismatching type
     pub fn into_leaf(self) -> C::Leaf {
         if let HandleInner::Leaf(l) = self.0 {
@@ -335,19 +322,6 @@ where
         }
     }
 
-    fn update_annotation(&mut self) {
-        // Only the case of Node needs an updated annotation, since it's the only case
-        // that has an annotation and could have been updated
-        match self.0 {
-            HandleInner::Node(ref node, ref mut ann) => {
-                if let Some(new) = node.annotation() {
-                    *ann = new
-                }
-            }
-            _ => (),
-        }
-    }
-
     /// Returns a HandleRef from the Handle
     pub fn inner(&self) -> io::Result<HandleRef<C, H>> {
         Ok(match self.0 {
@@ -376,29 +350,34 @@ where
         }
     }
 
-    fn _inner_mut(&mut self) -> io::Result<HandleMut<C, H>> {
+    /// Get a wrapped mutable reference to the inner node
+    pub fn inner_mut(&mut self) -> io::Result<HandleMutWrap<C, H>> {
         Ok(match self.0 {
-            HandleInner::None => HandleMut::None,
-            HandleInner::Leaf(ref mut l) => HandleMut::Leaf(l),
-            HandleInner::Node(ref mut n, _) => HandleMut::Node(&mut **n),
+            HandleInner::None => HandleMutWrap {
+                annotation: None,
+                inner: HandleMut::None,
+            },
+            HandleInner::Leaf(ref mut l) => HandleMutWrap {
+                annotation: None,
+                inner: HandleMut::Leaf(l),
+            },
+            HandleInner::Node(ref mut n, ref mut ann) => HandleMutWrap {
+                annotation: Some(ann),
+                inner: HandleMut::Node(&mut **n),
+            },
             HandleInner::Persisted(_, _) => {
                 if let HandleInner::Persisted(snap, ann) =
                     mem::replace(&mut self.0, HandleInner::None)
                 {
                     let restored = snap.restore()?;
                     *self = Handle(HandleInner::Node(Box::new(restored), ann));
-                    return self._inner_mut();
+                    return self.inner_mut();
                 } else {
                     unreachable!()
                 }
             }
             _ => unimplemented!(),
         })
-    }
-
-    /// Get a wrapped mutable reference to the inner node
-    pub fn inner_mut(&mut self) -> io::Result<HandleMutWrap<C, H>> {
-        HandleMutWrap::new(self)
     }
 
     #[doc(hidden)]

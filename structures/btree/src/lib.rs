@@ -8,8 +8,8 @@ use arrayvec::ArrayVec;
 use kelvin::{
     annotation,
     annotations::{Cardinality, Counter, MaxKey, MaxKeyType},
-    ByteHash, Compound, Content, Handle, HandleMut, HandleType, Method, Sink,
-    Source, ValPath, ValPathMut, ValRef, ValRefMut,
+    ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
+    Sink, Source,
 };
 
 const N: usize = 2;
@@ -400,19 +400,6 @@ where
             }
         }
     }
-
-    /// Returns a reference to a value in the map, if any
-    pub fn get(&self, k: &K) -> io::Result<Option<impl ValRef<V>>> {
-        ValPath::new(self, &mut BTreeSearch::from(k), k)
-    }
-
-    /// Returns a reference to a mutable value in the map, if any
-    pub fn get_mut<'a>(
-        &'a mut self,
-        k: &K,
-    ) -> io::Result<Option<impl ValRefMut<V>>> {
-        ValPathMut::new(self, &mut BTreeSearch::from(k), k)
-    }
 }
 
 impl<K, V, H> Content<H> for BTree<K, V, H>
@@ -455,6 +442,15 @@ where
     fn children(&self) -> &[Handle<Self, H>] {
         &self.0
     }
+}
+
+impl<'a, K, V, H> Map<'a, K, V, H> for BTree<K, V, H>
+where
+    K: Content<H> + Ord + Eq,
+    V: Content<H>,
+    H: ByteHash,
+{
+    type KeySearch = BTreeSearch<'a, K>;
 }
 
 #[cfg(test)]
