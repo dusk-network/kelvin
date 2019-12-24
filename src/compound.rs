@@ -22,6 +22,7 @@ where
     /// Returns mutable handles to the children of the node
     fn children_mut(&mut self) -> &mut [Handle<Self, H>];
 
+    /// Returns the annotation of Compound, if not empty
     fn annotation(&self) -> Option<Self::Annotation> {
         Self::Annotation::combine(self.children())
     }

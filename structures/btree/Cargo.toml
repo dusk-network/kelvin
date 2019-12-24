@@ -6,3 +6,4 @@ edition = "2018"
 
 [dependencies]
 kelvin = { path = "../.." }
+arrayvec = "0.5"
