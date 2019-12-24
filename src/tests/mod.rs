@@ -7,6 +7,7 @@ use crate::{ByteHash, Compound, HandleType};
 
 /// Trait to test for correct empty state of a structure
 pub trait CorrectEmptyState<H> {
+    /// Make sure the collection is properly empty
     fn assert_correct_empty_state(&self);
 }
 

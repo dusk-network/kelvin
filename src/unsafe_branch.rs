@@ -219,7 +219,7 @@ where
     fn search<M: Method<C, H>>(&mut self, method: &mut M) -> io::Result<Found> {
         let node = self.inner_immutable();
         let children = node.children();
-        if self.ofs > children.len() - 1 {
+        if self.ofs + 1 > children.len() {
             return Ok(Found::Nothing);
         } else {
             Ok(match method.select(&children[self.ofs..]) {
