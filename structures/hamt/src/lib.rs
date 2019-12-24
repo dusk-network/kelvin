@@ -6,7 +6,7 @@ use kelvin::{
     annotation,
     annotations::{Cardinality, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleOwned, HandleRef,
-    HandleType, Method, Sink, Source, ValPath, ValPathMut, ValRef, ValRefMut,
+    HandleType, Map, Method, Sink, Source,
 };
 use seahash::SeaHasher;
 use std::hash::{Hash, Hasher};
@@ -103,47 +103,52 @@ where
         v: V,
     ) -> io::Result<Option<V>> {
         let s = calculate_slot(h, depth);
-        let mut slot = self.0[s].inner_mut()?;
 
-        Ok(match &mut *slot {
-            HandleMut::None => {
-                slot.replace(HandleOwned::Leaf((k, v)));
-                None
-            }
-            HandleMut::Leaf((ref old_k, ref mut old_v)) => {
+        enum Action {
+            Split,
+            Insert,
+            Replace,
+        }
+
+        let action = match &mut *self.0[s].inner_mut()? {
+            HandleMut::None => Action::Insert,
+            HandleMut::Leaf((ref old_k, _)) => {
                 if old_k == &k {
-                    Some(mem::replace(old_v, v))
+                    Action::Replace
                 } else {
-                    if let HandleOwned::Leaf((old_k, old_v)) =
-                        slot.replace(HandleOwned::None)
-                    {
-                        let old_h = hash(&old_k);
-
-                        let mut new_node = HAMT::new();
-                        new_node.sub_insert(depth + 1, h, k, v)?;
-                        new_node.sub_insert(depth + 1, old_h, old_k, old_v)?;
-                        slot.replace(HandleOwned::Node(new_node));
-                        None
-                    } else {
-                        unreachable!()
-                    }
+                    Action::Split
                 }
             }
-            HandleMut::Node(node) => node.sub_insert(depth + 1, h, k, v)?,
+            HandleMut::Node(node) => {
+                return node.sub_insert(depth + 1, h, k, v)
+            }
+        };
+
+        Ok(match action {
+            Action::Insert => {
+                self.0[s] = Handle::new_leaf((k, v));
+                None
+            }
+            Action::Replace => {
+                let (_, v) =
+                    mem::replace(&mut self.0[s], Handle::new_leaf((k, v)))
+                        .into_leaf();
+                Some(v)
+            }
+            Action::Split => {
+                let (old_k, old_v) =
+                    mem::replace(&mut self.0[s], Handle::new_empty())
+                        .into_leaf();
+
+                let old_h = hash(&old_k);
+
+                let mut new_node = HAMT::new();
+                new_node.sub_insert(depth + 1, h, k, v)?;
+                new_node.sub_insert(depth + 1, old_h, old_k, old_v)?;
+                self.0[s] = Handle::new_node(new_node);
+                None
+            }
         })
-    }
-
-    /// Returns a reference to a value in the map, if any
-    pub fn get(&self, k: &K) -> io::Result<Option<impl ValRef<V>>> {
-        ValPath::new(self, &mut HAMTSearch::from(&k), k)
-    }
-
-    /// Returns a reference to a mutable value in the map, if any
-    pub fn get_mut<'a>(
-        &'a mut self,
-        k: &K,
-    ) -> io::Result<Option<impl ValRefMut<V>>> {
-        ValPathMut::new(self, &mut HAMTSearch::from(&k), k)
     }
 
     /// Remove element with given key, returning it.
@@ -270,6 +275,15 @@ where
         }
         Ok(HAMT(bucket))
     }
+}
+
+impl<'a, K, V, H> Map<'a, K, V, H> for HAMT<(K, V), H>
+where
+    K: Content<H> + Hash + Eq,
+    V: Content<H>,
+    H: ByteHash,
+{
+    type KeySearch = HAMTSearch;
 }
 
 annotation! {
