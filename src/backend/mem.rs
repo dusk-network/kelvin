@@ -44,6 +44,10 @@ impl<H: ByteHash> Backend<H> for MemBackend<H> {
         }
     }
 
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
     fn size(&self) -> usize {
         self.size
     }

@@ -33,14 +33,13 @@ macro_rules! quickcheck_map {
             Keys,
             Persist,
             PersistRestore,
-            PersistRestoreRoot,
             Count,
         }
 
         impl Arbitrary for Op {
             fn arbitrary<G: Gen>(g: &mut G) -> Op {
                 let k: u8 = g.gen_range(0, KEY_SPACE);
-                let op = g.gen_range(0, 14);
+                let op = g.gen_range(0, 13);
                 match op {
                     0 => Op::Insert(k, g.gen()),
                     1 => Op::Iter,
@@ -54,8 +53,7 @@ macro_rules! quickcheck_map {
                     9 => Op::Keys,
                     10 => Op::Persist,
                     11 => Op::PersistRestore,
-                    12 => Op::PersistRestoreRoot,
-                    13 => Op::Count,
+                    12 => Op::Count,
                     _ => unreachable!(),
                 }
             }
@@ -207,9 +205,6 @@ macro_rules! quickcheck_map {
                     Op::PersistRestore => {
                         let snapshot = store.persist(&mut test_a).unwrap();
                         test_a = store.restore(&snapshot).unwrap();
-                    }
-                    Op::PersistRestoreRoot => {
-                        //
                     }
                     Op::Count => {
                         assert_eq!(test_a.count() as usize, model.len())
