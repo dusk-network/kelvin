@@ -118,12 +118,9 @@ impl<H: ByteHash> Store<H> {
         snap: &Snapshot<T, H>,
     ) -> io::Result<T> {
         for gen in self.0.generations.as_ref() {
-            match gen.read().get(&snap.hash) {
-                Ok(read) => {
-                    let mut source = Source::new(read, self);
-                    return T::restore(&mut source);
-                }
-                Err(_) => (),
+            if let Ok(read) = gen.read().get(&snap.hash) {
+                let mut source = Source::new(read, self);
+                return T::restore(&mut source);
             }
         }
         panic!("could not restore");
