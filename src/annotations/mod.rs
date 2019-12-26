@@ -50,7 +50,7 @@ where
             //let a: &A = first.borrow();
             let t: &T = (*first).borrow().borrow();
             let mut s: T = t.clone();
-            while let Some(next) = iter.next() {
+            for next in iter {
                 let a: &A = next.borrow();
                 s.op(a.borrow())
             }
