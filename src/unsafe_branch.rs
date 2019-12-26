@@ -220,7 +220,7 @@ where
         let node = self.inner_immutable();
         let children = node.children();
         if self.ofs + 1 > children.len() {
-            return Ok(Found::Nothing);
+            Ok(Found::Nothing)
         } else {
             Ok(match method.select(&children[self.ofs..]) {
                 Some(i) => {
@@ -327,13 +327,10 @@ where
 
     fn pop_level(&mut self) -> bool {
         if let Some(popped) = self.0.pop() {
-            if self.0.len() > 0 {
-                match popped.node {
-                    NodeRef::Owned(o) => {
-                        let last = self.0.last_mut().expect("length < 1");
-                        last.insert_child(*o);
-                    }
-                    _ => (),
+            if !self.0.is_empty() {
+                if let NodeRef::Owned(o) = popped.node {
+                    let last = self.0.last_mut().expect("length < 1");
+                    last.insert_child(*o);
                 }
             }
             true

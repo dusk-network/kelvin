@@ -19,7 +19,7 @@ where
 
         write!(&mut s, "{}: [ ", self.children().len()).unwrap();
 
-        let mut iter = self.children().into_iter();
+        let mut iter = self.children().iter();
 
         if let Some(n) = iter.next() {
             write!(&mut s, "{}", n.draw()).unwrap();
