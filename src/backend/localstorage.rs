@@ -48,7 +48,7 @@ impl<H: ByteHash> Backend<H> for WebBackend<H> {
         if let Some(value) = self.storage.get_item(&key).unwrap() {
             Ok(Box::new(io::Cursor::new(decode(&value).unwrap())))
         } else {
-            panic!();
+            Err(io::Error::new(io::ErrorKind::NotFound, "Data not found"))
         }
     }
 
