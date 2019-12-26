@@ -19,6 +19,7 @@ impl<H: ByteHash> DiskBackend<H> {
     /// Create a new DiskBackend at given path, creates a new directory if neccesary
     pub fn new<P: Into<PathBuf>>(path: P) -> io::Result<Self> {
         let dir = path.into();
+        create_dir(&dir)?;
         let index_dir = dir.join("index");
         create_dir(&index_dir)?;
         let index = Index::new(&index_dir)?;

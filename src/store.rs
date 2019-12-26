@@ -135,3 +135,22 @@ impl<H: ByteHash> Store<H> {
         size
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::tests::tempfile::tempdir;
+    use crate::Blake2b;
+
+    #[test]
+    fn should_create_directory() {
+        let dir = tempdir().unwrap();
+
+        let mut sub_dir: PathBuf = dir.path().into();
+        sub_dir.push("sub_directory");
+
+        let _store = Store::<Blake2b>::new(&sub_dir).unwrap();
+
+        assert!(sub_dir.exists());
+    }
+}
