@@ -11,11 +11,12 @@ license = "MPL-2.0"
 [dependencies]
 arrayvec = "0.4.10"
 bytehash = "0.1"
+atomicwrites = "0.2"
 cache = "0.2.0"
 owning_ref = "0.4.0"
 parking_lot = "0.6.4"
 tempfile = "3.0.3"
-appendix = { version = "0.1", optional = true }
+appendix = { version = "0.2", optional = true }
 web-sys = { optional = true, features = [ "Window", "Storage" ], version = "*"}
 futures = "0.3.1"
 wasm-bindgen = { optional = true, version = "*" }
