@@ -82,7 +82,7 @@ where
     K: PartialEq + Eq,
 {
     /// Creates a new `ValPath`, when leaf is found and key matches
-    pub fn new<'m, M>(
+    pub fn new<M>(
         node: &'a C,
         method: &mut M,
         key: &K,
@@ -107,7 +107,7 @@ where
     K: PartialEq + Eq,
 {
     /// Creates a new `ValPathMut`, when leaf is found and key matches
-    pub fn new<'m, M>(
+    pub fn new<M>(
         node: &'a mut C,
         method: &mut M,
         key: &K,
