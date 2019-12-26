@@ -52,7 +52,8 @@ where
 
 impl<'a, H: ByteHash> io::Write for Sink<'a, H> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.bytes.write(buf)
+        let res = self.bytes.write(buf);
+        res
     }
 
     fn flush(&mut self) -> io::Result<()> {

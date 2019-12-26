@@ -72,7 +72,7 @@ impl<X: 'static, H: ByteHash> Content<H> for PhantomData<X> {
 
 impl<H: ByteHash> Content<H> for u8 {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
-        sink.write_all(&[*self])?;
+        sink.write(&[*self])?;
         Ok(())
     }
 
@@ -87,7 +87,7 @@ impl<H: ByteHash> Content<H> for String {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
         let bytes = self.as_bytes();
         sink.write_u64::<BigEndian>(bytes.len() as u64)?;
-        sink.write_all(&bytes)?;
+        sink.write(&bytes)?;
         Ok(())
     }
 
