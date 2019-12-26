@@ -152,7 +152,7 @@ impl<H: ByteHash> Store<H> {
                 Err(_) => (),
             }
         }
-        panic!("could not restore");
+        Err(io::Error::new(io::ErrorKind::NotFound, "Data not found"))
     }
 
     /// Returns the approximate size of the store
