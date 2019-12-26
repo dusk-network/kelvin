@@ -144,9 +144,12 @@ impl<H: ByteHash> Store<H> {
         hash: &H::Digest,
     ) -> io::Result<T> {
         for gen in self.0.generations.as_ref() {
-            if let Ok(read) = gen.read().get(hash) {
-                let mut source = Source::new(read, self);
-                return T::restore(&mut source);
+            match gen.read().get(hash) {
+                Ok(read) => {
+                    let mut source = Source::new(read, self);
+                    return T::restore(&mut source);
+                }
+                Err(_) => (),
             }
         }
         panic!("could not restore");

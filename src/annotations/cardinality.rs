@@ -63,7 +63,7 @@ where
 {
     fn count(&self) -> U {
         self.annotation()
-            .map(|ann| ann.borrow().0)
-            .unwrap_or_else(U::zero)
+            .map(|ann| ann.borrow().0.clone())
+            .unwrap_or(U::zero())
     }
 }
