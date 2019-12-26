@@ -15,6 +15,7 @@ mod debug_draw;
 mod handle;
 mod iter;
 mod map;
+mod root;
 mod search;
 mod sink;
 mod source;
@@ -36,10 +37,11 @@ pub use crate::iter::LeafIterable;
 pub use crate::map::{
     KeyValIterable, Map, ValPath, ValPathMut, ValRef, ValRefMut,
 };
+pub use crate::root::Root;
 pub use crate::search::Method;
 pub use crate::sink::Sink;
 pub use crate::source::Source;
-pub use crate::store::{Shared, Store};
+pub use crate::store::{Shared, Snapshot, Store};
 
 // Re-export
 pub use bytehash::{Blake2b, ByteHash};

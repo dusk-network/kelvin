@@ -34,6 +34,9 @@ pub trait Backend<H: ByteHash> {
         bytes: Vec<u8>,
     ) -> io::Result<PutResult>;
 
+    /// Flush changes to underlying medium
+    fn flush(&mut self) -> io::Result<()>;
+
     /// Return approximate size in bytes (optional)
     fn size(&self) -> usize {
         0
