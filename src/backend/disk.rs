@@ -19,8 +19,15 @@ impl<H: ByteHash> DiskBackend<H> {
     /// Create a new DiskBackend at given path, creates a new directory if neccesary
     pub fn new<P: Into<PathBuf>>(path: P) -> io::Result<Self> {
         let dir = path.into();
+        if !dir.exists() {
+            create_dir(&dir)?;
+        }
+
         let index_dir = dir.join("index");
-        create_dir(&index_dir)?;
+        if !index_dir.exists() {
+            create_dir(&index_dir)?;
+        }
+
         let index = Index::new(&index_dir)?;
         let data_path = dir.join("data");
 
@@ -63,10 +70,15 @@ impl<H: ByteHash> Backend<H> for DiskBackend<H> {
             // value already present
             Ok(PutResult::AlreadyThere)
         } else {
-            self.data.write(&bytes)?;
+            self.data.write_all(&bytes)?;
             self.data_offset += bytes.len() as u64;
             Ok(PutResult::Ok)
         }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.data.flush()?;
+        self.index.flush()
     }
 
     fn size(&self) -> usize {

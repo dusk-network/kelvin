@@ -37,6 +37,7 @@ pub struct Shared<T, H: ByteHash>(T, PhantomData<H>);
 
 unsafe impl<T, H: ByteHash> Send for Shared<T, H> {}
 
+/// A snapshot of a structure state
 #[derive(Clone, Debug)]
 pub struct Snapshot<T, H: ByteHash> {
     hash: H::Digest,
@@ -55,6 +56,15 @@ impl<T: Content<H>, H: ByteHash> Snapshot<T, H> {
 
     pub(crate) fn restore(&self) -> io::Result<T> {
         self.store.restore(self)
+    }
+
+    /// Returns a reference to the underlying snapshot hash.
+    pub fn hash(&self) -> &H::Digest {
+        &self.hash
+    }
+
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        self.hash.as_ref()
     }
 }
 
@@ -104,6 +114,15 @@ impl<H: ByteHash> Store<H> {
         })
     }
 
+    pub(crate) fn flush(&self) -> io::Result<()> {
+        // TODO, sync to disk
+        for gen in &self.0.generations {
+            gen.write().flush()?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn put(
         &self,
         hash: H::Digest,
@@ -117,13 +136,17 @@ impl<H: ByteHash> Store<H> {
         &self,
         snap: &Snapshot<T, H>,
     ) -> io::Result<T> {
+        self.get_hash(&snap.hash)
+    }
+
+    pub(crate) fn get_hash<T: Content<H>>(
+        &self,
+        hash: &H::Digest,
+    ) -> io::Result<T> {
         for gen in self.0.generations.as_ref() {
-            match gen.read().get(&snap.hash) {
-                Ok(read) => {
-                    let mut source = Source::new(read, self);
-                    return T::restore(&mut source);
-                }
-                Err(_) => (),
+            if let Ok(read) = gen.read().get(hash) {
+                let mut source = Source::new(read, self);
+                return T::restore(&mut source);
             }
         }
         panic!("could not restore");
@@ -136,5 +159,34 @@ impl<H: ByteHash> Store<H> {
             size += gen.read().size();
         }
         size
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::tests::tempfile::tempdir;
+    use crate::Blake2b;
+
+    #[test]
+    fn should_create_directory() {
+        let dir = tempdir().unwrap();
+
+        let mut sub_dir: PathBuf = dir.path().into();
+        sub_dir.push("sub_directory");
+
+        let _store = Store::<Blake2b>::new(&sub_dir).unwrap();
+
+        assert!(sub_dir.exists());
+    }
+
+    #[test]
+    fn should_allow_two() {
+        let dir = tempdir().unwrap();
+
+        {
+            let _store = Store::<Blake2b>::new(dir.path()).unwrap();
+        }
+        let _store = Store::<Blake2b>::new(dir.path()).unwrap();
     }
 }
