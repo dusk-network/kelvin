@@ -63,7 +63,7 @@ impl<H: ByteHash> Backend<H> for DiskBackend<H> {
             // value already present
             Ok(PutResult::AlreadyThere)
         } else {
-            self.data.write(&bytes)?;
+            self.data.write_all(&bytes)?;
             self.data_offset += bytes.len() as u64;
             Ok(PutResult::Ok)
         }

@@ -117,13 +117,12 @@ where
     H: ByteHash,
 {
     fn drop(&mut self) {
-        match (self.annotation.as_mut(), &self.inner) {
-            (Some(ref mut ann), HandleMut::Node(ref node)) => {
-                if let Some(annotation) = node.annotation() {
-                    ***ann = annotation
-                }
+        if let (Some(ref mut ann), HandleMut::Node(ref node)) =
+            (self.annotation.as_mut(), &self.inner)
+        {
+            if let Some(annotation) = node.annotation() {
+                ***ann = annotation
             }
-            _ => (),
         }
     }
 }
@@ -222,7 +221,7 @@ where
             [1] => Ok(Handle(HandleInner::Leaf(C::Leaf::restore(source)?))),
             [2] => {
                 let mut h = H::Digest::default();
-                source.read(h.as_mut())?;
+                source.read_exact(h.as_mut())?;
                 Ok(Handle(HandleInner::Persisted(
                     Snapshot::new(h, source.store()),
                     C::Annotation::restore(source)?,
@@ -415,9 +414,9 @@ where
     /// Draw contents of handle, for debug use
     pub fn draw(&self) -> String {
         match self.0 {
-            HandleInner::None => format!("□ "),
+            HandleInner::None => "□ ".to_string(),
             HandleInner::Leaf(ref l) => format!("{:?} ", l),
-            HandleInner::Node(ref n, _) => format!("{}", n.draw()),
+            HandleInner::Node(ref n, _) => n.draw(),
             _ => unimplemented!(),
         }
     }
