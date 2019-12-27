@@ -1,12 +1,3 @@
-# kelvin
-
-A merkle-tree toolkit and backend.
-
-Kelvin is designed to make designing and using Merkle Tree structures a breeze.
-
-Here is an example of all you need to construct a program state that can be persisted as a Merkle Tree. (taken from examples/simple)
-
-```rust
 use std::io;
 
 use kelvin::{Blake2b, ByteHash, Content, Map, Root, Sink, Source};
@@ -73,7 +64,3 @@ fn main() -> io::Result<()> {
 
     Ok(())
 }
-```
-
-
-

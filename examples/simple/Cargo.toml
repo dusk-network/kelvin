@@ -1,0 +1,10 @@
+[package]
+name = "simple"
+version = "0.1.0"
+authors = ["Kristoffer Ström <kristoffer@rymdkoloni.se>"]
+edition = "2018"
+
+[dependencies]
+kelvin = { path = "../.." }
+kelvin-btree = { path = "../../structures/btree" }
+kelvin-hamt = { path = "../../structures/hamt" }
