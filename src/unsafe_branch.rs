@@ -267,43 +267,41 @@ where
         &mut self,
         method: &mut M,
     ) -> io::Result<()> {
-        loop {
-            if let Some(last) = self.0.last_mut() {
-                let mut push = None;
-                match last.search(method)? {
-                    Found::Leaf => {
+        while let Some(last) = self.0.last_mut() {
+            let mut push = None;
+            match last.search(method)? {
+                Found::Leaf => {
+                    break;
+                }
+                Found::Node => match last.referencing()? {
+                    HandleRef::Node(cached) => {
+                        let level: Level<'a, _, _> = unsafe {
+                            mem::transmute(Level::new_cached(cached))
+                        };
+                        push = Some(level);
+                    }
+                    _ => unreachable!(),
+                },
+                Found::Nothing => {
+                    if self.0.len() > 1 {
+                        self.pop_level();
+                        self.advance();
+                    } else {
                         break;
                     }
-                    Found::Node => match last.referencing()? {
-                        HandleRef::Node(cached) => {
-                            let level: Level<'a, _, _> = unsafe {
-                                mem::transmute(Level::new_cached(cached))
-                            };
-                            push = Some(level);
-                        }
-                        _ => unreachable!(),
-                    },
-                    Found::Nothing => {
-                        if self.0.len() > 1 {
-                            self.pop_level();
-                            self.advance();
-                        } else {
-                            break;
-                        }
-                    }
                 }
-                if let Some(level) = push.take() {
-                    self.0.push(level);
-                }
-            } else {
-                break;
+            }
+            if let Some(level) = push.take() {
+                self.0.push(level);
             }
         }
         Ok(())
     }
 
     pub fn advance(&mut self) {
-        self.0.last_mut().map(|level| level.ofs += 1);
+        if let Some(level) = self.0.last_mut() {
+            level.ofs += 1;
+        }
     }
 
     pub fn leaf(&self) -> Option<&C::Leaf> {
