@@ -15,11 +15,11 @@ const N_BUCKETS: usize = 16;
 
 /// A hash array mapped trie
 #[derive(Clone)]
-pub struct HAMT<L, H: ByteHash>([Handle<Self, H>; N_BUCKETS])
+pub struct HAMT<K, V, H: ByteHash>([Handle<Self, H>; N_BUCKETS])
 where
     Self: Compound<H>;
 
-impl<L: Content<H>, H: ByteHash> Default for HAMT<L, H> {
+impl<K: Content<H>, V: Content<H>, H: ByteHash> Default for HAMT<K, V, H> {
     fn default() -> Self {
         HAMT(Default::default())
     }
@@ -79,7 +79,7 @@ enum Removed<L> {
     Collapse(L, L),
 }
 
-impl<K, V, H> HAMT<(K, V), H>
+impl<K, V, H> HAMT<K, V, H>
 where
     K: Content<H> + Hash + Eq,
     V: Content<H>,
@@ -239,9 +239,10 @@ where
     }
 }
 
-impl<L, H> Content<H> for HAMT<L, H>
+impl<K, V, H> Content<H> for HAMT<K, V, H>
 where
-    L: Content<H>,
+    K: Content<H>,
+    V: Content<H>,
     H: ByteHash,
 {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
@@ -277,7 +278,7 @@ where
     }
 }
 
-impl<'a, K, V, H> Map<'a, K, V, H> for HAMT<(K, V), H>
+impl<'a, K, V, H> Map<'a, K, V, H> for HAMT<K, V, H>
 where
     K: Content<H> + Hash + Eq,
     V: Content<H>,
@@ -293,12 +294,13 @@ annotation! {
     } where K: MaxKeyType
 }
 
-impl<L, H> Compound<H> for HAMT<L, H>
+impl<K, V, H> Compound<H> for HAMT<K, V, H>
 where
     H: ByteHash,
-    L: Content<H>,
+    K: Content<H>,
+    V: Content<H>,
 {
-    type Leaf = L;
+    type Leaf = (K, V);
     type Annotation = Cardinality<u64>;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
@@ -319,14 +321,14 @@ mod test {
 
     #[test]
     fn trivial_map() {
-        let mut h = HAMT::<_, Blake2b>::new();
+        let mut h = HAMT::<_, _, Blake2b>::new();
         h.insert(28, 28).unwrap();
         assert_eq!(*h.get(&28).unwrap().unwrap(), 28);
     }
 
     #[test]
     fn bigger_map() {
-        let mut h = HAMT::<_, Blake2b>::new();
+        let mut h = HAMT::<_, _, Blake2b>::new();
         for i in 0..1000 {
             h.insert(i, i).unwrap();
             assert_eq!(*h.get(&i).unwrap().unwrap(), i);
@@ -335,9 +337,9 @@ mod test {
 
     #[test]
     fn nested_maps() {
-        let mut map_a = HAMT::<_, Blake2b>::new();
+        let mut map_a = HAMT::<_, _, Blake2b>::new();
         for i in 0..100 {
-            let mut map_b = HAMT::<_, Blake2b>::new();
+            let mut map_b = HAMT::<_, _, Blake2b>::new();
 
             for o in 0..100 {
                 map_b.insert(o, o).unwrap();
