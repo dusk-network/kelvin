@@ -3,7 +3,11 @@ name = "kelvin-hamt"
 version = "0.1.0"
 authors = ["Kristoffer Ström <kristoffer@dusk.network>"]
 edition = "2018"
+repository = "https://github.com/dusk-network/kelvin"
+tags = ["datastructure", "kelvin"]
+description = "HAMT Data structure"
+license = "MPL-2.0"
 
 [dependencies]
-kelvin = { path = "../.." }
+kelvin = { path = "../..", version = "0.4" }
 seahash = "3.0"
