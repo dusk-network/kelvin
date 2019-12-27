@@ -416,7 +416,7 @@ where
         match self.0 {
             HandleInner::None => "□ ".to_string(),
             HandleInner::Leaf(ref l) => format!("{:?} ", l),
-            HandleInner::Node(ref n, _) => n.draw().to_string(),
+            HandleInner::Node(ref n, _) => n.draw(),
             _ => unimplemented!(),
         }
     }
