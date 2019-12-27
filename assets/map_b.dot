@@ -1,0 +1,17 @@
+digraph g {
+node [shape = record,height=.1];
+node0[label = " <f0> | - | d: 3 | <f1> ", style=filled, fillcolor=red];
+
+node1[label = " c: 2 | - | b: 1 | -", style=filled, fillcolor=yellow];
+"node0":f0 -> "node1"
+node2[label = " - | - | a: 0 | e: 42"];
+"node0":f1 -> "node2"
+
+
+node3[label = " <f0> | - | d: 3 | <f1> "];
+"node3":f0 -> "node1"
+"node3":f1 -> "node4"
+
+node4[label = " - | - | a: 0 | e: 4"];
+
+}
