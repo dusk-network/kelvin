@@ -31,12 +31,13 @@ impl<H: ByteHash> DiskBackend<H> {
         let index = Index::new(&index_dir)?;
         let data_path = dir.join("data");
 
-        let data = OpenOptions::new()
+        let mut data = OpenOptions::new()
             .create(true)
             .write(true)
             .open(&data_path)?;
 
         let data_offset = data.metadata()?.len();
+        data.seek(SeekFrom::End(0))?;
 
         Ok(DiskBackend {
             index,
