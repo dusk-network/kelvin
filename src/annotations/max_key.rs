@@ -8,13 +8,10 @@ use crate::{Associative, ByteHash, Content, Sink, Source};
 pub struct MaxKey<K>(K);
 
 /// Trait group for keys
-pub trait MaxKeyType: Eq + Ord + Clone {}
-impl<T> MaxKeyType for T where T: Eq + Ord + Clone {}
+pub trait MaxKeyType: Ord + Clone {}
+impl<T> MaxKeyType for T where T: Ord + Clone {}
 
-impl<K> Deref for MaxKey<K>
-where
-    K: MaxKeyType,
-{
+impl<K> Deref for MaxKey<K> {
     type Target = K;
 
     fn deref(&self) -> &Self::Target {

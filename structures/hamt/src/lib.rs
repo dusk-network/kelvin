@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::io;
 use std::iter::Iterator;
 use std::mem;
@@ -34,7 +35,6 @@ fn hash<T: Hash>(t: T) -> u64 {
 
 #[inline(always)]
 fn calculate_slot(mut h: u64, mut depth: usize) -> usize {
-    debug_assert!(N_BUCKETS == 16);
     while depth > 15 {
         h = hash(h);
         depth -= 16;
@@ -43,7 +43,6 @@ fn calculate_slot(mut h: u64, mut depth: usize) -> usize {
     (shifted & 0x0f) as usize
 }
 
-#[derive(Clone)]
 pub struct HAMTSearch {
     hash: u64,
     depth: usize,
@@ -51,7 +50,7 @@ pub struct HAMTSearch {
 
 impl<T> From<&T> for HAMTSearch
 where
-    T: Hash,
+    T: Hash + ?Sized,
 {
     fn from(t: &T) -> Self {
         HAMTSearch {
@@ -196,12 +195,11 @@ where
             if let Some((removed, reinsert)) = collapse {
                 removed_leaf = removed;
                 slot.replace(HandleOwned::Leaf(reinsert));
+            } else if let HandleOwned::Leaf(l) = slot.replace(HandleOwned::None)
+            {
+                removed_leaf = l
             } else {
-                if let HandleOwned::Leaf(l) = slot.replace(HandleOwned::None) {
-                    removed_leaf = l
-                } else {
-                    unreachable!()
-                }
+                unreachable!()
             }
         }
         // we might have to collapse the branch
@@ -246,7 +244,6 @@ where
     H: ByteHash,
 {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
-        debug_assert!(N_BUCKETS == 16);
         let mut mask = 0u16;
         for i in 0..N_BUCKETS {
             if let HandleType::None = self.0[i].handle_type() {
@@ -278,11 +275,12 @@ where
     }
 }
 
-impl<'a, K, V, H> Map<'a, K, V, H> for HAMT<K, V, H>
+impl<'a, O, K, V, H> Map<'a, O, K, V, H> for HAMT<K, V, H>
 where
-    K: Content<H> + Hash + Eq,
+    K: Content<H> + Hash + Eq + Borrow<O>,
     V: Content<H>,
     H: ByteHash,
+    O: Hash + Eq + ?Sized + 'a,
 {
     type KeySearch = HAMTSearch;
 }

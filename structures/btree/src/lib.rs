@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
 use std::io;
 use std::iter::Iterator;
+use std::marker::PhantomData;
 use std::mem;
 
 use arrayvec::ArrayVec;
@@ -39,27 +40,33 @@ annotation! {
         U: Counter
 }
 
-#[derive(Clone)]
-pub struct BTreeSearch<'a, K>(&'a K);
+pub struct BTreeSearch<'a, K, O: ?Sized>(&'a O, PhantomData<K>);
 
-impl<'a, K> From<&'a K> for BTreeSearch<'a, K> {
-    fn from(k: &'a K) -> Self {
-        BTreeSearch(k)
+impl<'a, K, O> BTreeSearch<'a, K, O> {
+    fn new(key: &'a O) -> Self {
+        BTreeSearch(key, PhantomData)
     }
 }
 
-impl<'a, K, C, H> Method<C, H> for BTreeSearch<'a, K>
+impl<'a, K, O: ?Sized> From<&'a O> for BTreeSearch<'a, K, O> {
+    fn from(k: &'a O) -> Self {
+        BTreeSearch(k, PhantomData)
+    }
+}
+
+impl<'a, K, O, C, H> Method<C, H> for BTreeSearch<'a, K, O>
 where
     C: Compound<H>,
     C::Annotation: Borrow<MaxKey<K>>,
     H: ByteHash,
-    K: Clone + Ord,
+    K: Ord + Borrow<O>,
+    O: Ord + ?Sized,
 {
     fn select(&mut self, handles: &[Handle<C, H>]) -> Option<usize> {
         for (i, h) in handles.iter().enumerate() {
             if let Some(ann) = h.annotation() {
                 let handle_key: &MaxKey<K> = (*ann).borrow();
-                if *self.0 <= **handle_key {
+                if self.0 <= (**handle_key).borrow() {
                     return Some(i);
                 }
             }
@@ -96,7 +103,7 @@ where
 
 impl<K, V, H> BTree<K, V, H>
 where
-    K: Content<H> + Ord + Eq,
+    K: Content<H> + Ord,
     V: Content<H>,
     H: ByteHash,
 {
@@ -107,13 +114,11 @@ where
 
     /// Insert key-value pair into the BTree, optionally returning expelled value
     pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
-        let result = match self._insert(Handle::new_leaf((k, v)), 0)? {
+        match self._insert(Handle::new_leaf((k, v)), 0)? {
             InsertResult::Ok => Ok(None),
             InsertResult::Replaced((_, v)) => Ok(Some(v)),
             InsertResult::Split(_) => unreachable!(),
-        };
-
-        result
+        }
     }
 
     fn _insert(
@@ -137,7 +142,7 @@ where
         let ann_key: &K = &**borrow;
         let len = self.0.len();
 
-        match BTreeSearch(ann_key).select(self.children()) {
+        match BTreeSearch::new(ann_key).select(self.children()) {
             Some(i) => match &mut *self.0[i].inner_mut()? {
                 HandleMut::None => unreachable!(),
                 HandleMut::Leaf((key, _)) => {
@@ -225,7 +230,7 @@ where
                     } else {
                         // CASE B
                         new_node.0.push(popped);
-                        new_node.0.insert(i - 2, handle);
+                        new_node.0.insert(i - N, handle);
                     }
 
                     debug_assert!(self.0.len() == N);
@@ -270,7 +275,7 @@ where
         // The default action
         let mut action = Action::Noop;
 
-        match BTreeSearch(k).select(self.children()) {
+        match BTreeSearch::new(k).select(self.children()) {
             Some(i) => {
                 match &mut *self.0[i].inner_mut()? {
                     HandleMut::None => unreachable!(),
@@ -444,13 +449,14 @@ where
     }
 }
 
-impl<'a, K, V, H> Map<'a, K, V, H> for BTree<K, V, H>
+impl<'a, O, K, V, H> Map<'a, O, K, V, H> for BTree<K, V, H>
 where
-    K: Content<H> + Ord + Eq,
+    K: Content<H> + Ord + Borrow<O>,
     V: Content<H>,
     H: ByteHash,
+    O: Ord + ?Sized + 'a,
 {
-    type KeySearch = BTreeSearch<'a, K>;
+    type KeySearch = BTreeSearch<'a, K, O>;
 }
 
 #[cfg(test)]
@@ -516,6 +522,13 @@ mod test {
             let i = bigger - i - 1;
             assert_eq!(h.remove(&i).unwrap().unwrap(), i);
         }
+    }
+
+    #[test]
+    fn borrowed_keys() {
+        let mut map = BTree::<String, u8, Blake2b>::new();
+        map.insert("hello".into(), 8).unwrap();
+        assert_eq!(*map.get("hello").unwrap().unwrap(), 8);
     }
 
     #[test]

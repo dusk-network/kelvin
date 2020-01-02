@@ -3,7 +3,7 @@ use crate::handle::{Handle, HandleType};
 use crate::ByteHash;
 
 /// Trait for searching through tree structured data
-pub trait Method<C, H>: Clone
+pub trait Method<C, H>
 where
     C: Compound<H>,
     H: ByteHash,

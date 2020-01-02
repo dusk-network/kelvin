@@ -47,7 +47,7 @@ fn main() -> io::Result<()> {
 
     let mut state: State<_> = root.restore()?;
 
-    match state.map_a.get(&"Foo".to_owned())? {
+    match state.map_a.get("Foo")? {
         Some(path) => println!("Foo is {}", *path),
         None => println!("Foo is `None`"),
     }
