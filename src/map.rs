@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::io;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
@@ -79,23 +80,25 @@ where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
     H: ByteHash,
-    K: PartialEq + Eq,
+    K: Eq,
 {
     /// Creates a new `ValPath`, when leaf is found and key matches
-    pub fn new<M>(
+    pub fn new<M, O>(
         node: &'a C,
         method: &mut M,
-        key: &K,
+        key: &O,
     ) -> io::Result<Option<Self>>
     where
         M: Method<C, H>,
+        K: Borrow<O>,
+        O: Eq + ?Sized,
     {
-        Ok(Branch::new(node, method)?.filter(|b| b.key() == key).map(
-            |branch| ValPath {
+        Ok(Branch::new(node, method)?
+            .filter(|b| b.key().borrow() == key)
+            .map(|branch| ValPath {
                 branch,
                 _marker: PhantomData,
-            },
-        ))
+            }))
     }
 }
 
@@ -104,19 +107,21 @@ where
     C: Compound<H>,
     C::Leaf: KVPair<K, V>,
     H: ByteHash,
-    K: PartialEq + Eq,
+    K: Eq,
 {
     /// Creates a new `ValPathMut`, when leaf is found and key matches
-    pub fn new<M>(
+    pub fn new<M, O>(
         node: &'a mut C,
         method: &mut M,
-        key: &K,
+        key: &O,
     ) -> io::Result<Option<Self>>
     where
         M: Method<C, H>,
+        K: Borrow<O>,
+        O: Eq + ?Sized,
     {
         Ok(BranchMut::new(node, method)?
-            .filter(|b| b.key() == key)
+            .filter(|b| b.key().borrow() == key)
             .map(|branch| ValPathMut {
                 branch,
                 _marker: PhantomData,
@@ -309,26 +314,27 @@ impl<'a, T, V> ValRefMut<'a, V> for T where
 }
 
 /// Collection can be read as a map
-pub trait Map<'a, K, V, H>
+pub trait Map<'a, O, K, V, H>
 where
     Self: Compound<H>,
     Self::Leaf: KVPair<K, V>,
-    K: Content<H> + Eq + 'a,
+    K: Content<H> + Eq + Borrow<O> + 'a,
+    O: Eq + ?Sized + 'a,
     H: ByteHash,
 {
     /// The method used to search for keys in the structure
-    type KeySearch: Method<Self, H> + From<&'a K>;
+    type KeySearch: Method<Self, H> + From<&'a O>;
 
     /// Returns a reference to a value in the map, if any
-    fn get(&self, k: &'a K) -> io::Result<Option<ValPath<K, V, Self, H>>> {
+    fn get(&self, k: &'a O) -> io::Result<Option<ValPath<K, V, Self, H>>> {
         ValPath::new(self, &mut Self::KeySearch::from(k), k)
     }
 
     /// Returns a reference to a mutable value in the map, if any
     fn get_mut(
         &mut self,
-        k: &'a K,
+        k: &'a O,
     ) -> io::Result<Option<ValPathMut<K, V, Self, H>>> {
-        ValPathMut::new(self, &mut Self::KeySearch::from(k), k)
+        ValPathMut::new(self, &mut Self::KeySearch::from(k.borrow()), k)
     }
 }

@@ -24,7 +24,6 @@ enum NodeRef<'a, C, H> {
     Cached(Cached<'a, C>),
     Mutable(&'a mut C),
     Owned(Box<C>),
-    #[allow(unused)]
     Placeholder(PhantomData<H>),
 }
 
