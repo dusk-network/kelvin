@@ -4,8 +4,8 @@ edition = "2018"
 name = "kelvin"
 repository = "https://github.com/dusk-network/kelvin"
 description = "Merkle tree tooklit and backend"
-tags = ["merkle", "datastructure", "database"]
-version = "0.4.1"
+keywords = ["merkle", "datastructure", "database"]
+version = "0.5.0"
 license = "MPL-2.0"
 
 [dependencies]
