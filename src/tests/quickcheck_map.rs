@@ -69,8 +69,8 @@ macro_rules! quickcheck_map {
             for op in ops {
                 match op {
                     Op::Insert(k, v) => {
-                        let a = test_a.insert(k, v).unwrap();
-                        let b = model.insert(k, v);
+                        let a = test_a.insert([k], v).unwrap();
+                        let b = model.insert([k], v);
                         assert_eq!(a, b);
                     }
 
@@ -103,8 +103,8 @@ macro_rules! quickcheck_map {
                     }
 
                     Op::Get(k) => {
-                        let a = test_a.get(&k).unwrap();
-                        let b = model.get(&k);
+                        let a = test_a.get(&[k]).unwrap();
+                        let b = model.get(&[k]);
 
                         dbg!(a.is_some(), b.is_some());
 
@@ -120,19 +120,18 @@ macro_rules! quickcheck_map {
 
                     Op::GetMut(k) => {
                         let a = test_a
-                            .get_mut(&k)
+                            .get_mut(&[k])
                             .unwrap()
                             .map(|mut val| *val = val.wrapping_add(1));
                         let b = model
-                            .get_mut(&k)
+                            .get_mut(&[k])
                             .map(|val| *val = val.wrapping_add(1));
 
                         assert!(a == b)
                     }
-
                     Op::Remove(k) => {
-                        let a = test_a.remove(&k).unwrap();
-                        let c = model.remove(&k);
+                        let a = test_a.remove(&[k]).unwrap();
+                        let c = model.remove(&[k]);
 
                         assert!(a == c);
                     }

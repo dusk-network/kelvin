@@ -57,7 +57,7 @@ pub enum HandleType {
 
 /// The user-facing type for handles, the main type to build trees
 #[derive(Clone)]
-pub struct Handle<C, H>(HandleInner<C, H>)
+pub struct Handle<C, H>(HandleInner<C, H>, C::Meta)
 where
     C: Compound<H>,
     H: ByteHash;
@@ -161,7 +161,7 @@ where
     H: ByteHash,
 {
     fn default() -> Self {
-        Handle(HandleInner::None)
+        Handle(HandleInner::None, Default::default())
     }
 }
 
@@ -193,6 +193,7 @@ where
     H: ByteHash,
 {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
+        self.1.persist(sink)?;
         match self.0 {
             HandleInner::None => sink.write_all(&[0]),
             HandleInner::Leaf(ref mut leaf) => {
@@ -214,18 +215,24 @@ where
     }
 
     fn restore(source: &mut Source<H>) -> io::Result<Self> {
+        let meta = C::Meta::restore(source)?;
         let mut tag = [0u8];
         source.read_exact(&mut tag)?;
         match tag {
-            [0] => Ok(Handle(HandleInner::None)),
-            [1] => Ok(Handle(HandleInner::Leaf(C::Leaf::restore(source)?))),
+            [0] => Ok(Handle(HandleInner::None, meta)),
+            [1] => {
+                Ok(Handle(HandleInner::Leaf(C::Leaf::restore(source)?), meta))
+            }
             [2] => {
                 let mut h = H::Digest::default();
                 source.read_exact(h.as_mut())?;
-                Ok(Handle(HandleInner::Persisted(
-                    Snapshot::new(h, source.store()),
-                    C::Annotation::restore(source)?,
-                )))
+                Ok(Handle(
+                    HandleInner::Persisted(
+                        Snapshot::new(h, source.store()),
+                        C::Annotation::restore(source)?,
+                    ),
+                    meta,
+                ))
             }
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -242,19 +249,19 @@ where
 {
     /// Constructs a new leaf Handle
     pub fn new_leaf(l: C::Leaf) -> Handle<C, H> {
-        Handle(HandleInner::Leaf(l))
+        Handle(HandleInner::Leaf(l), Default::default())
     }
 
     /// Constructs a new node Handle
     pub fn new_node<I: Into<Box<C>>>(n: I) -> Handle<C, H> {
         let node = n.into();
         let ann = node.annotation().expect("Empty node handles are invalid");
-        Handle(HandleInner::Node(node, ann))
+        Handle(HandleInner::Node(node, ann), Default::default())
     }
 
     /// Constructs a new empty node Handle
     pub fn new_empty() -> Handle<C, H> {
-        Handle(HandleInner::None)
+        Handle(HandleInner::None, Default::default())
     }
 
     /// Converts handle into leaf, panics on mismatching type
@@ -349,6 +356,21 @@ where
         }
     }
 
+    /// Returns a reference to the metadata of the handle
+    pub fn meta(&self) -> &C::Meta {
+        &self.1
+    }
+
+    /// Returns a mutable reference to the metadata of the handle
+    pub fn meta_mut(&mut self) -> &mut C::Meta {
+        &mut self.1
+    }
+
+    /// Returns a mutable reference to the metadata of the handle
+    pub fn take_meta(&mut self) -> C::Meta {
+        mem::replace(&mut self.1, Default::default())
+    }
+
     /// Get a wrapped mutable reference to the inner node
     pub fn inner_mut(&mut self) -> io::Result<HandleMutWrap<C, H>> {
         Ok(match self.0 {
@@ -369,7 +391,11 @@ where
                     mem::replace(&mut self.0, HandleInner::None)
                 {
                     let restored = snap.restore()?;
-                    *self = Handle(HandleInner::Node(Box::new(restored), ann));
+                    let meta = self.meta().clone();
+                    *self = Handle(
+                        HandleInner::Node(Box::new(restored), ann),
+                        meta,
+                    );
                     return self.inner_mut();
                 } else {
                     unreachable!()

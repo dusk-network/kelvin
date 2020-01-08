@@ -11,6 +11,12 @@ where
 {
     /// The leaf type of the compound structure
     type Leaf: Content<H>;
+
+    /// The type of metadata attached to handles
+    ///
+    /// This is for storing data accessible from the `select` method
+    type Meta: Content<H> + Default;
+
     /// The node-annotation type
     type Annotation: Content<H>
         + Combine<Self::Annotation>

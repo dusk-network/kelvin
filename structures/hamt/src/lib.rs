@@ -299,6 +299,7 @@ where
     V: Content<H>,
 {
     type Leaf = (K, V);
+    type Meta = ();
     type Annotation = Cardinality<u64>;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {

@@ -6,6 +6,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::sink::Sink;
 use crate::source::Source;
+use arrayvec::ArrayVec;
 
 /// The main trait for content-adressable types, MUST assure a 1-1 mapping between
 /// values of the type and hash digests.
@@ -143,6 +144,44 @@ number!(i128: read_i128, write_i128);
 number!(i64: read_i64, write_i64);
 number!(i32: read_i32, write_i32);
 number!(i16: read_i16, write_i16);
+
+macro_rules! array {
+    ($number:expr) => {
+        impl<T, H: ByteHash> Content<H> for [T; $number]
+        where
+            T: Content<H>,
+        {
+            fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
+                for i in 0..$number {
+                    self[i].persist(sink)?;
+                }
+                Ok(())
+            }
+
+            fn restore(source: &mut Source<H>) -> io::Result<Self> {
+                let mut arrayvec: ArrayVec<[T; $number]> = ArrayVec::new();
+                for _ in 0..$number {
+                    arrayvec.push(T::restore(source)?);
+                }
+                match arrayvec.into_inner() {
+                    Ok(arr) => Ok(arr),
+                    Err(_) => unreachable!("Errors out earlier if not full"),
+                }
+            }
+        }
+    };
+}
+
+// TODO, find a better way to do this
+array!(0);
+array!(1);
+array!(2);
+array!(3);
+array!(4);
+array!(5);
+array!(6);
+array!(7);
+array!(8);
 
 impl<A, B, H> Content<H> for (A, B)
 where
