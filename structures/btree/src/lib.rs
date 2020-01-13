@@ -10,7 +10,7 @@ use kelvin::{
     annotation,
     annotations::{Cardinality, Counter, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
-    Sink, Source,
+    SearchResult, Sink, Source, KV,
 };
 
 const N: usize = 2;
@@ -62,21 +62,28 @@ where
     K: Ord + Borrow<O>,
     O: Ord + ?Sized,
 {
-    fn select(&mut self, handles: &[Handle<C, H>]) -> Option<usize> {
+    fn select(&mut self, handles: &[Handle<C, H>]) -> SearchResult {
         for (i, h) in handles.iter().enumerate() {
             if let Some(ann) = h.annotation() {
                 let handle_key: &MaxKey<K> = (*ann).borrow();
-                if self.0 <= (**handle_key).borrow() {
-                    return Some(i);
+                if self.0 == (**handle_key).borrow() {
+                    // correct key
+                    if h.handle_type() == HandleType::Leaf {
+                        return SearchResult::Leaf(i);
+                    } else {
+                        return SearchResult::Path(i);
+                    }
+                } else if self.0 < (**handle_key).borrow() {
+                    return SearchResult::Path(i);
                 }
             }
         }
-        // Always select last element if node
         let len = handles.len();
+        // Always select last element if node
         if len > 0 && handles[len - 1].handle_type() == HandleType::Node {
-            Some(len - 1)
+            SearchResult::Path(len - 1)
         } else {
-            None
+            SearchResult::None
         }
     }
 }
@@ -114,9 +121,9 @@ where
 
     /// Insert key-value pair into the BTree, optionally returning expelled value
     pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
-        match self._insert(Handle::new_leaf((k, v)), 0)? {
+        match self._insert(Handle::new_leaf(KV::new(k, v)), 0)? {
             InsertResult::Ok => Ok(None),
-            InsertResult::Replaced((_, v)) => Ok(Some(v)),
+            InsertResult::Replaced(KV { key: _, val }) => Ok(Some(val)),
             InsertResult::Split(_) => unreachable!(),
         }
     }
@@ -143,12 +150,13 @@ where
         let len = self.0.len();
 
         match BTreeSearch::new(ann_key).select(self.children()) {
-            Some(i) => match &mut *self.0[i].inner_mut()? {
+            SearchResult::Leaf(i) => {
+                action = Action::Replace(i);
+            }
+            SearchResult::Path(i) => match &mut *self.0[i].inner_mut()? {
                 HandleMut::None => unreachable!(),
-                HandleMut::Leaf((key, _)) => {
-                    if key == ann_key {
-                        action = Action::Replace(i);
-                    } else if *key > *ann_key {
+                HandleMut::Leaf(KV { key, val: _ }) => {
+                    if *key > *ann_key {
                         action = Action::Insert(i);
                     } else if i + 1 == len {
                         action = Action::Insert(i + 1);
@@ -175,7 +183,7 @@ where
                     }
                 }
             },
-            None => action = Action::Insert(len),
+            SearchResult::None => action = Action::Insert(len),
         }
 
         loop {
@@ -256,7 +264,7 @@ where
     /// Remove element with given key, returning it.
     pub fn remove(&mut self, k: &K) -> io::Result<Option<V>> {
         match self._remove(k, 0)? {
-            RemoveResult::Removed((_, v)) => Ok(Some(v)),
+            RemoveResult::Removed(KV { key: _, val }) => Ok(Some(val)),
             RemoveResult::Noop => Ok(None),
             _ => unreachable!(),
         }
@@ -276,14 +284,13 @@ where
         let mut action = Action::Noop;
 
         match BTreeSearch::new(k).select(self.children()) {
-            Some(i) => {
+            SearchResult::Leaf(i) => {
+                action = Action::Remove(i);
+            }
+            SearchResult::Path(i) => {
                 match &mut *self.0[i].inner_mut()? {
                     HandleMut::None => unreachable!(),
-                    HandleMut::Leaf((key, _)) => {
-                        if key == k {
-                            action = Action::Remove(i);
-                        }
-                    }
+                    HandleMut::Leaf(_) => (),
                     HandleMut::Node(n) => {
                         let ann =
                             n.annotation().expect("node without annotation");
@@ -304,7 +311,7 @@ where
                     }
                 }
             }
-            None => return Ok(RemoveResult::Noop),
+            SearchResult::None => return Ok(RemoveResult::Noop),
         }
 
         match action {
@@ -437,7 +444,7 @@ where
     K: Content<H> + Ord,
     V: Content<H>,
 {
-    type Leaf = (K, V);
+    type Leaf = KV<K, V>;
     type Meta = ();
     type Annotation = BTreeAnnotation<K, u64>;
 
@@ -450,7 +457,7 @@ where
     }
 }
 
-impl<'a, O, K, V, H> Map<'a, O, K, V, H> for BTree<K, V, H>
+impl<'a, K, O, V, H> Map<'a, K, O, V, H> for BTree<K, V, H>
 where
     K: Content<H> + Ord + Borrow<O>,
     V: Content<H>,
@@ -515,13 +522,29 @@ mod test {
     #[test]
     fn insert_remove_reverse() {
         let mut h = BTree::<_, _, Blake2b>::new();
-        let bigger = 1024;
+        let bigger = 4;
         for i in 0..bigger {
+            println!("{}", i);
             h.insert(i, i).unwrap();
         }
         for i in 0..bigger {
             let i = bigger - i - 1;
+            println!("rev {}", i);
             assert_eq!(h.remove(&i).unwrap().unwrap(), i);
+        }
+    }
+
+    #[test]
+    fn insert_get_reverse() {
+        let mut h = BTree::<_, _, Blake2b>::new();
+        let bigger = 4;
+        for i in 0..bigger {
+            println!("{}", i);
+            h.insert(i, i).unwrap();
+        }
+        for i in 0..bigger {
+            let i = bigger - i - 1;
+            assert_eq!(*h.get(&i).unwrap().unwrap(), i);
         }
     }
 

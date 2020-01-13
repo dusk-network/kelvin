@@ -2,6 +2,17 @@ use crate::compound::Compound;
 use crate::handle::{Handle, HandleType};
 use crate::ByteHash;
 
+#[derive(Debug)]
+/// Result of searching through a node
+pub enum SearchResult {
+    /// Found exact match
+    Leaf(usize),
+    /// Found a Node/Leaf or None in path
+    Path(usize),
+    /// Early Abort
+    None,
+}
+
 /// Trait for searching through tree structured data
 pub trait Method<C, H>
 where
@@ -9,7 +20,7 @@ where
     H: ByteHash,
 {
     /// Select among the handles of the node
-    fn select(&mut self, handles: &[Handle<C, H>]) -> Option<usize>;
+    fn select(&mut self, handles: &[Handle<C, H>]) -> SearchResult;
 }
 
 #[derive(Clone)]
@@ -20,17 +31,18 @@ where
     H: ByteHash,
     C: Compound<H>,
 {
-    fn select(&mut self, handles: &[Handle<C, H>]) -> Option<usize>
+    fn select(&mut self, handles: &[Handle<C, H>]) -> SearchResult
     where
         C: Compound<H>,
         H: ByteHash,
     {
         for (i, h) in handles.iter().enumerate() {
             match h.handle_type() {
-                HandleType::Leaf | HandleType::Node => return Some(i),
+                HandleType::Leaf => return SearchResult::Leaf(i),
+                HandleType::Node => return SearchResult::Path(i),
                 HandleType::None => (),
             }
         }
-        None
+        SearchResult::None
     }
 }

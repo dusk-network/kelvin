@@ -13,7 +13,7 @@ macro_rules! quickcheck_map {
 
         use $crate::tests::quickcheck::{quickcheck, Arbitrary, Gen};
         #[allow(unused)]
-        use $crate::{annotations::Count, KeyValIterable, LeafIterable, Store};
+        use $crate::{annotations::Count, LeafIterable, Store, ValIterable};
 
         use $crate::tests::rand::Rng;
 
@@ -26,11 +26,8 @@ macro_rules! quickcheck_map {
             GetMut(u8),
             Remove(u8),
             RemoveAll,
-            Iter,
-            IterMut,
             Values,
             ValuesMut,
-            Keys,
             Persist,
             PersistRestore,
             Count,
@@ -39,21 +36,18 @@ macro_rules! quickcheck_map {
         impl Arbitrary for Op {
             fn arbitrary<G: Gen>(g: &mut G) -> Op {
                 let k: u8 = g.gen_range(0, KEY_SPACE);
-                let op = g.gen_range(0, 13);
+                let op = g.gen_range(0, 10);
                 match op {
                     0 => Op::Insert(k, g.gen()),
-                    1 => Op::Iter,
-                    2 => Op::IterMut,
-                    3 => Op::Get(k),
-                    4 => Op::GetMut(k),
-                    5 => Op::Remove(k),
-                    6 => Op::RemoveAll,
-                    7 => Op::Values,
-                    8 => Op::ValuesMut,
-                    9 => Op::Keys,
-                    10 => Op::Persist,
-                    11 => Op::PersistRestore,
-                    12 => Op::Count,
+                    1 => Op::Get(k),
+                    2 => Op::GetMut(k),
+                    3 => Op::Remove(k),
+                    4 => Op::RemoveAll,
+                    5 => Op::Values,
+                    6 => Op::ValuesMut,
+                    7 => Op::Persist,
+                    8 => Op::PersistRestore,
+                    9 => Op::Count,
                     _ => unreachable!(),
                 }
             }
@@ -63,47 +57,18 @@ macro_rules! quickcheck_map {
             let dir = tempdir().unwrap();
             let store = Store::<Blake2b>::new(&dir.path()).unwrap();
 
-            let mut test_a = $new_map();
+            let mut test = $new_map();
             let mut model = HashMap::new();
 
             for op in ops {
                 match op {
                     Op::Insert(k, v) => {
-                        let a = test_a.insert([k], v).unwrap();
+                        let a = test.insert([k], v).unwrap();
                         let b = model.insert([k], v);
                         assert_eq!(a, b);
                     }
-
-                    Op::Iter => {
-                        let mut a: Vec<_> = test_a
-                            .iter()
-                            .map(|res| res.unwrap())
-                            .cloned()
-                            .collect();
-                        let mut b: Vec<_> = model
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect();
-
-                        a.sort();
-                        b.sort();
-
-                        assert_eq!(a, b);
-                    }
-
-                    Op::IterMut => {
-                        for (_, value) in test_a.iter_mut().map(|r| r.unwrap())
-                        {
-                            *value = value.wrapping_add(1)
-                        }
-
-                        for (_, value) in model.iter_mut() {
-                            *value = value.wrapping_add(1)
-                        }
-                    }
-
                     Op::Get(k) => {
-                        let a = test_a.get(&[k]).unwrap();
+                        let a = test.get(&[k]).unwrap();
                         let b = model.get(&[k]);
 
                         dbg!(a.is_some(), b.is_some());
@@ -117,9 +82,8 @@ macro_rules! quickcheck_map {
                             (None, Some(_)) => panic!("model has kv, test not"),
                         };
                     }
-
                     Op::GetMut(k) => {
-                        let a = test_a
+                        let a = test
                             .get_mut(&[k])
                             .unwrap()
                             .map(|mut val| *val = val.wrapping_add(1));
@@ -130,29 +94,23 @@ macro_rules! quickcheck_map {
                         assert!(a == b)
                     }
                     Op::Remove(k) => {
-                        let a = test_a.remove(&[k]).unwrap();
+                        let a = test.remove(&[k]).unwrap();
                         let c = model.remove(&[k]);
 
                         assert!(a == c);
                     }
-
                     Op::RemoveAll => {
                         model.clear();
-                        let mut keys = vec![];
-                        for (key, _) in test_a.iter().map(|res| res.unwrap()) {
-                            keys.push(key.clone());
+                        for k in 0..KEY_SPACE {
+                            test.remove(&[k]).unwrap();
                         }
-                        for key in keys {
-                            test_a.remove(&key).unwrap();
-                        }
-                        test_a.assert_correct_empty_state();
+                        test.assert_correct_empty_state();
                     }
-
                     Op::Values => {
-                        let mut a: Vec<_> =
-                            test_a.values().map(|v| *v.unwrap()).collect();
+                        let mut a: Vec<u8> =
+                            test.values().map(|v| *v.unwrap()).collect();
 
-                        let mut c: Vec<_> =
+                        let mut c: Vec<u8> =
                             model.values().map(|v| *v).collect();
 
                         a.sort();
@@ -160,14 +118,13 @@ macro_rules! quickcheck_map {
 
                         assert!(a == c);
                     }
-
                     Op::ValuesMut => {
-                        let _res = test_a
+                        let _res = test
                             .values_mut()
-                            .map(|v| {
+                            .map(|v: Result<&mut u8, _>| {
                                 let v = v.unwrap();
                                 *v = v.wrapping_add(1);
-                                ()
+                                v
                             })
                             .collect::<Vec<_>>();
 
@@ -176,8 +133,8 @@ macro_rules! quickcheck_map {
                             .map(|v| *v = v.wrapping_add(1))
                             .collect::<Vec<_>>();
 
-                        let mut a: Vec<_> =
-                            test_a.values().map(|v| *v.unwrap()).collect();
+                        let mut a: Vec<u8> =
+                            test.values().map(|v| *v.unwrap()).collect();
 
                         let mut c: Vec<_> =
                             model.values().map(|v| *v).collect();
@@ -187,27 +144,14 @@ macro_rules! quickcheck_map {
 
                         assert!(a == c);
                     }
-                    Op::Keys => {
-                        let mut a: Vec<_> =
-                            test_a.keys().map(|v| *v.unwrap()).collect();
-
-                        let mut c: Vec<_> = model.keys().map(|k| *k).collect();
-
-                        a.sort();
-                        c.sort();
-
-                        assert!(a == c);
-                    }
                     Op::Persist => {
-                        store.persist(&mut test_a).unwrap();
+                        store.persist(&mut test).unwrap();
                     }
                     Op::PersistRestore => {
-                        let snapshot = store.persist(&mut test_a).unwrap();
-                        test_a = store.restore(&snapshot).unwrap();
+                        let snapshot = store.persist(&mut test).unwrap();
+                        test = store.restore(&snapshot).unwrap();
                     }
-                    Op::Count => {
-                        assert_eq!(test_a.count() as usize, model.len())
-                    }
+                    Op::Count => assert_eq!(test.count() as usize, model.len()),
                 };
             }
             true
@@ -296,6 +240,11 @@ macro_rules! quickcheck_map {
                 Insert(11, 56),
                 Get(11)
             ]))
+        }
+
+        #[test]
+        fn regression_insert_two_get() {
+            assert!(run_ops(vec![Insert(5, 23), Insert(9, 52), Get(4)]))
         }
     };
 }

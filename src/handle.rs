@@ -283,7 +283,7 @@ where
     }
 
     /// Returns a reference to contained leaf, if any
-    pub(crate) fn leaf(&self) -> Option<&C::Leaf> {
+    pub fn leaf(&self) -> Option<&C::Leaf> {
         match self.0 {
             HandleInner::Leaf(ref leaf) => Some(leaf),
             _ => None,
@@ -291,7 +291,7 @@ where
     }
 
     /// Returns a mutable reference to contained leaf, if any
-    pub(crate) fn leaf_mut(&mut self) -> Option<&mut C::Leaf> {
+    pub fn leaf_mut(&mut self) -> Option<&mut C::Leaf> {
         match self.0 {
             HandleInner::Leaf(ref mut leaf) => Some(leaf),
             _ => None,

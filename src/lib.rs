@@ -35,10 +35,10 @@ pub use crate::handle::{
 };
 pub use crate::iter::LeafIterable;
 pub use crate::map::{
-    KeyValIterable, Map, ValPath, ValPathMut, ValRef, ValRefMut,
+    Map, ValIterable, ValPath, ValPathMut, ValRef, ValRefMut, KV,
 };
 pub use crate::root::Root;
-pub use crate::search::Method;
+pub use crate::search::{Method, SearchResult};
 pub use crate::sink::Sink;
 pub use crate::source::Source;
 pub use crate::store::{Shared, Snapshot, Store};

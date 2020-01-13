@@ -5,8 +5,8 @@ use std::mem;
 use kelvin::{
     annotation,
     annotations::{Cardinality, MaxKey, MaxKeyType},
-    ByteHash, Compound, Content, Handle, HandleMut, HandleOwned, HandleRef,
-    HandleType, Map, Method, Sink, Source,
+    ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
+    SearchResult, Sink, Source,
 };
 use smallvec::SmallVec;
 
@@ -25,17 +25,28 @@ const MAX_KEY_LEN: usize = 16_384;
 const SEGMENT_SIZE: usize = 4;
 
 /// A hash array mapped trie
-#[derive(Clone)]
 pub struct Radix<K, V, H: ByteHash>([Handle<Self, H>; N_BUCKETS])
 where
     Self: Compound<H>;
 
-impl<K: Content<H>, V: Content<H>, H: ByteHash> Default for Radix<K, V, H> {
+impl<K: 'static, V: Content<H>, H: ByteHash> Clone for Radix<K, V, H> {
+    fn clone(&self) -> Self {
+        Radix(self.0.clone())
+    }
+}
+
+impl<K, V, H> Default for Radix<K, V, H>
+where
+    K: 'static,
+    V: Content<H>,
+    H: ByteHash,
+{
     fn default() -> Self {
         Radix(Default::default())
     }
 }
 
+#[derive(PartialEq, Eq, Debug)]
 pub struct Nibbles<'a> {
     bytes: &'a [u8],
     truncate_front: bool,
@@ -48,6 +59,22 @@ impl<'a> Nibbles<'a> {
             bytes,
             truncate_front: false,
             truncate_back: false,
+        }
+    }
+
+    // [ 1 | 2, 4 7, 8 3 ]
+    fn suffix(&self, ofs: usize) -> Self {
+        let ofs_bytes = if self.truncate_front {
+            (ofs + 1) / 2
+        } else {
+            ofs / 2
+        };
+        // even ofs
+        let even = ofs % 2 == 0;
+        Nibbles {
+            bytes: &self.bytes[ofs_bytes..],
+            truncate_front: self.truncate_front ^ even,
+            truncate_back: self.truncate_back,
         }
     }
 
@@ -101,6 +128,20 @@ impl Into<NibbleBuf> for Nibbles<'_> {
     fn into(self) -> NibbleBuf {
         NibbleBuf {
             bytes: SmallVec::from_slice(&self.bytes),
+            truncate_front: self.truncate_front,
+            truncate_back: self.truncate_back,
+        }
+    }
+}
+
+trait AsNibbles {
+    fn as_nibbles<'a>(&'a self) -> Nibbles<'a>;
+}
+
+impl AsNibbles for NibbleBuf {
+    fn as_nibbles<'a>(&'a self) -> Nibbles<'a> {
+        Nibbles {
+            bytes: &self.bytes,
             truncate_front: self.truncate_front,
             truncate_back: self.truncate_back,
         }
@@ -171,6 +212,10 @@ impl<'a> RadixSearch<'a> {
         }
     }
 
+    fn suffix(&self) -> Nibbles<'a> {
+        self.nibbles.suffix(self.offset)
+    }
+
     fn suffix_len(&self) -> usize {
         self.nibbles.len() - self.offset
     }
@@ -204,28 +249,43 @@ impl<C, H> Method<C, H> for RadixSearch<'_>
 where
     C: Compound<H>,
     H: ByteHash,
-    C::Meta: Borrow<NibbleBuf>,
+    C::Meta: AsNibbles,
 {
-    fn select(&mut self, handles: &[Handle<C, H>]) -> Option<usize> {
+    fn select(&mut self, handles: &[Handle<C, H>]) -> SearchResult {
         // Are we att the correct leaf?
         if self.suffix_len() == 0 {
-            return Some(0);
+            match handles[0].handle_type() {
+                HandleType::Leaf => {
+                    return SearchResult::Leaf(0);
+                }
+                HandleType::None => {
+                    return SearchResult::None;
+                }
+                _ => unreachable!("Branch in 0:th position"),
+            }
         }
 
         // else find the next hop
         let nibble = self.current_nibble();
-        // offset past the 0 leaf node
+        // offset past the null-suffix leaf node
         let i = nibble as usize + 1;
-        // increment key by the length of the saved NibbleBuf shared suffix plus
-        // one for the nibble we implicitly store in our choice of branch
-        self.offset += handles[i].meta().borrow().len() + 1;
-        Some(i)
+
+        let meta_nibbles = handles[i].meta().as_nibbles();
+
+        if meta_nibbles == self.suffix() {
+            SearchResult::Leaf(i)
+        } else {
+            // increment key by the length of the saved NibbleBuf shared suffix plus
+            // one for the nibble we implicitly store in our choice of branch
+            self.offset += meta_nibbles.len() + 1;
+            SearchResult::Path(i)
+        }
     }
 }
 
 impl<K, V, H> Radix<K, V, H>
 where
-    K: Content<H> + AsRef<[u8]> + Eq,
+    K: AsRef<[u8]> + Eq + 'static,
     V: Content<H>,
     H: ByteHash,
 {
@@ -245,34 +305,30 @@ where
 
         let action = {
             let mut search = RadixSearch::new(&k);
-            let at =
-                search.select(self.children()).expect("Always returns Some");
 
-            match self.0[at].inner()? {
-                HandleRef::None => Action::Insert {
-                    at,
-                    suffix: search.into_suffix(),
+            match search.select(self.children()) {
+                SearchResult::Leaf(i) => Action::Replace(i),
+                SearchResult::Path(i) => match *self.0[i].inner_mut()? {
+                    HandleMut::None => Action::Insert {
+                        at: i,
+                        suffix: search.into_suffix(),
+                    },
+                    HandleMut::Leaf(_) => Action::Split(i),
+                    HandleMut::Node(_) => unimplemented!(),
                 },
-                HandleRef::Leaf((leaf_k, leaf_v)) => {
-                    if *leaf_k == k {
-                        Action::Replace(at)
-                    } else {
-                        Action::Split(at)
-                    }
-                }
-                HandleRef::Node(_) => unimplemented!("node {}", at),
+                SearchResult::None => unreachable!(),
             }
         };
 
         match action {
             Action::Insert { at, suffix } => {
-                let mut leaf = Handle::new_leaf((k, v));
+                let mut leaf = Handle::new_leaf(v);
                 *leaf.meta_mut() = suffix;
                 self.0[at] = leaf;
                 return Ok(None);
             }
             Action::Replace(at) => {
-                let mut leaf = Handle::new_leaf((k, v));
+                let mut leaf = Handle::new_leaf(v);
                 // move the suffix of the key
                 let suffix = self.0[at].take_meta();
                 // into the replacement node
@@ -280,12 +336,11 @@ where
                 // replace node
                 let replaced = mem::replace(&mut self.0[at], leaf);
                 // return the old value
-                Ok(Some(replaced.into_leaf().1))
+                Ok(Some(replaced.into_leaf()))
             }
             Action::Split(at) => {
                 unimplemented!("split {}", at);
             }
-            action => unimplemented!("unimplemented action {:?}", action),
         }
     }
 
@@ -302,7 +357,7 @@ where
 
 impl<K, V, H> Content<H> for Radix<K, V, H>
 where
-    K: Content<H>,
+    K: 'static,
     V: Content<H>,
     H: ByteHash,
 {
@@ -322,9 +377,9 @@ where
     }
 }
 
-impl<'a, O, K, V, H> Map<'a, O, K, V, H> for Radix<K, V, H>
+impl<'a, K, O, V, H> Map<'a, K, O, V, H> for Radix<K, V, H>
 where
-    K: Content<H> + AsRef<[u8]> + Eq + Borrow<O>,
+    K: AsRef<[u8]> + Eq + Borrow<O> + 'static,
     V: Content<H>,
     H: ByteHash,
     O: Eq + AsRef<[u8]> + 'a + ?Sized,
@@ -341,11 +396,11 @@ annotation! {
 
 impl<K, V, H> Compound<H> for Radix<K, V, H>
 where
-    H: ByteHash,
-    K: Content<H>,
+    K: 'static,
     V: Content<H>,
+    H: ByteHash,
 {
-    type Leaf = (K, V);
+    type Leaf = V;
     type Meta = NibbleBuf;
     type Annotation = Cardinality<u64>;
 
@@ -427,7 +482,6 @@ mod test {
     fn bigger_map() {
         let mut h = Radix::<_, _, Blake2b>::new();
         for i in 0u16..1000 {
-            println!("i {}", i);
             let b = i.to_be_bytes();
             h.insert(b, i).unwrap();
             assert_eq!(*h.get(&b).unwrap().unwrap(), i);

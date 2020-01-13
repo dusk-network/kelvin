@@ -31,12 +31,13 @@ where
     }
 }
 
-impl<K, V> From<&(K, V)> for MaxKey<K>
+impl<T, K> From<&T> for MaxKey<K>
 where
+    T: AsRef<K>,
     K: MaxKeyType,
 {
-    fn from((k, _): &(K, V)) -> Self {
-        MaxKey(k.clone())
+    fn from(t: &T) -> Self {
+        MaxKey(t.as_ref().clone())
     }
 }
 

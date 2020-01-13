@@ -34,6 +34,10 @@ where
         })
     }
 
+    pub(crate) fn exact(&self) -> bool {
+        self.0.exact()
+    }
+
     /// Search for the next value in the branch, using `method`
     ///
     /// Takes self by value, and returns the updated branch or `None`
@@ -87,6 +91,10 @@ where
         } else {
             None
         })
+    }
+
+    pub(crate) fn exact(&self) -> bool {
+        self.0.exact()
     }
 
     /// Search for the next value in the branch, using `method`
