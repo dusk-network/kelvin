@@ -10,7 +10,7 @@ use kelvin::{
     annotation,
     annotations::{Cardinality, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
-    SearchResult, Sink, Source,
+    SearchIn, SearchResult, Sink, Source,
 };
 
 const N_BUCKETS: usize = 17;
@@ -21,14 +21,22 @@ const N_BUCKETS: usize = 17;
 // so be literal
 const MAX_KEY_LEN: usize = 16_384;
 
-/// A hash array mapped trie
-pub struct Radix<K, V, H: ByteHash>([Handle<Self, H>; N_BUCKETS])
+/// A Prefix tree
+pub struct Radix<K, V, H>
 where
-    Self: Compound<H>;
+    Self: Compound<H>,
+    H: ByteHash,
+{
+    handles: [Handle<Self, H>; N_BUCKETS],
+    meta: [NibbleBuf; N_BUCKETS],
+}
 
 impl<K: 'static, V: Content<H>, H: ByteHash> Clone for Radix<K, V, H> {
     fn clone(&self) -> Self {
-        Radix(self.0.clone())
+        Radix {
+            handles: self.handles.clone(),
+            meta: self.meta.clone(),
+        }
     }
 }
 
@@ -39,7 +47,10 @@ where
     H: ByteHash,
 {
     fn default() -> Self {
-        Radix(Default::default())
+        Radix {
+            handles: Default::default(),
+            meta: Default::default(),
+        }
     }
 }
 
@@ -49,7 +60,7 @@ where
     H: ByteHash,
     C::Meta: AsNibbles,
 {
-    fn select(&mut self, handles: &[Handle<C, H>]) -> SearchResult {
+    fn select(&mut self, handles: SearchIn<C, H>) -> SearchResult {
         println!("SELECT {:?}", self);
 
         for i in 0..17 {
@@ -57,7 +68,7 @@ where
                 "{} {:?} : {:?} ",
                 i,
                 handles[i].handle_type(),
-                handles[i].meta().as_nibbles()
+                handles.meta()[i].as_nibbles()
             );
         }
         println!();
@@ -66,7 +77,7 @@ where
 
         let i = nibble + 1;
 
-        let nibbles = handles[i].meta().as_nibbles();
+        let nibbles = handles.meta()[i].as_nibbles();
 
         println!("nibbles at {} {:?}", i, nibbles);
 
@@ -114,14 +125,14 @@ where
 
         // Leaf case, for keys that are subsets of other keys
         if search.len() == 0 {
-            match self.0[0].handle_type() {
+            match self.handles[0].handle_type() {
                 HandleType::None => {
-                    self.0[0] = Handle::new_leaf(v);
+                    self.handles[0] = Handle::new_leaf(v);
                     return Ok(None);
                 }
                 HandleType::Leaf => {
                     return Ok(Some(
-                        mem::replace(&mut self.0[0], Handle::new_leaf(v))
+                        mem::replace(&mut self.handles[0], Handle::new_leaf(v))
                             .into_leaf(),
                     ));
                 }
@@ -134,38 +145,68 @@ where
         println!(
             "looking at {} {:?} with meta {:?} and search {:?}",
             i,
-            self.0[i].handle_type(),
-            self.0[i].meta(),
+            self.handles[i].handle_type(),
+            self.meta()[i],
             search
         );
 
-        let path_len = self.0[i].meta().len();
-        let common_len =
-            search.common_prefix(&self.0[i].meta().as_nibbles()).len();
+        let path_len = self.meta[i].len();
 
-        println!("common_len {}", common_len);
+        let common: NibbleBuf =
+            search.common_prefix(&self.meta[i].as_nibbles()).into();
+
+        println!("common len {}", common.len());
 
         if path_len == 0 {
             // only empty handles has null meta.
             println!("case a");
-            let mut leaf = Handle::new_leaf(v);
-            *leaf.meta_mut() = (*search).into();
-            self.0[i] = leaf;
+            let leaf = Handle::new_leaf(v);
+            self.meta[i] = (*search).into();
+            self.handles[i] = leaf;
             return Ok(None);
-        } else if common_len == search.len() {
+        } else if common.len() == search.len() {
             println!("case b");
-            let mut leaf = Handle::new_leaf(v);
-            return Ok(Some(mem::replace(&mut self.0[i], leaf).into_leaf()));
-        } else if common_len > 0 {
+            let leaf = Handle::new_leaf(v);
+            return Ok(Some(
+                mem::replace(&mut self.handles[i], leaf).into_leaf(),
+            ));
+        } else if common.len() < path_len {
+            println!("split");
             // we need to split
+            let mut old_path = mem::take(&mut self.meta[i]);
 
-            println!("case c");
-            unimplemented!("b");
+            let mut new_node = Self::new();
+
+            let old_handle = mem::take(&mut self.handles[i]);
+
+            // The path to re-insert the removed handle
+            let o = old_path.pop_nibble() + 1;
+            old_path.trim_front(common.len());
+            new_node.handles[o] = old_handle;
+            new_node.meta[o] = old_path;
+
+            println!("o a: {}", o);
+
+            // insert into new node
+            println!("recurse here");
+            search.trim_front(common.len());
+            new_node._insert(search, v)?;
+
+            self.handles[i] = Handle::new_node(new_node);
+            self.meta[i] = common;
+
+            return Ok(None);
         } else {
-            unimplemented!()
+            // recurse
+            if let HandleMut::Node(ref mut node) =
+                *self.handles[i].inner_mut()?
+            {
+                search.trim_front(common.len());
+                node._insert(search, v)
+            } else {
+                unreachable!()
+            }
         }
-
-        unimplemented!("dorp")
 
         // match self.0[i].handle_type() {
         //     HandleType::None => {
@@ -316,17 +357,26 @@ where
 {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
         for i in 0..N_BUCKETS {
-            self.0[i].persist(sink)?
+            self.handles[i].persist(sink)?
+        }
+        // We don't need to store the metadata for the leaf node
+        // since it will always be []
+        for i in 1..N_BUCKETS - 1 {
+            self.meta[i].persist(sink)?
         }
         Ok(())
     }
 
     fn restore(source: &mut Source<H>) -> io::Result<Self> {
         let mut handles: [Handle<Self, H>; N_BUCKETS] = Default::default();
-        for _ in 0..N_BUCKETS {
-            handles[0] = Handle::restore(source)?;
+        let mut meta: [NibbleBuf; N_BUCKETS] = Default::default();
+        for i in 0..N_BUCKETS {
+            handles[i] = Handle::restore(source)?;
         }
-        Ok(Radix(handles))
+        for i in 1..N_BUCKETS - 1 {
+            meta[i - 1] = NibbleBuf::restore(source)?;
+        }
+        Ok(Radix { handles, meta })
     }
 }
 
@@ -358,11 +408,15 @@ where
     type Annotation = Cardinality<u64>;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
-        &mut self.0
+        &mut self.handles
     }
 
     fn children(&self) -> &[Handle<Self, H>] {
-        &self.0
+        &self.handles
+    }
+
+    fn meta(&self) -> &[Self::Meta] {
+        &self.meta
     }
 }
 
@@ -383,14 +437,14 @@ mod test {
     #[test]
     fn bigger_map() {
         let mut h = Radix::<_, _, Blake2b>::new();
-        for i in 0u16..=16 {
+        for i in 0u16..1024 {
             let b = i.to_be_bytes();
             println!("-- INSERTING {} --", i);
             h.insert(b, i).unwrap();
 
             println!("{}", h.draw());
 
-            // assert_eq!(*h.get(&b).unwrap().unwrap(), i);
+            assert_eq!(*h.get(&b).unwrap().unwrap(), i);
         }
     }
 

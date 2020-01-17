@@ -8,10 +8,12 @@ pub struct DrawState {
 }
 
 impl DrawState {
-    fn pad(&self, string: &mut String) {
+    pub fn pad(&self) -> String {
+        let mut string = String::new();
         for _ in 0..self.recursion {
-            string.push_str("    ");
+            string.push_str("  ");
         }
+        string
     }
 }
 
@@ -35,8 +37,6 @@ where
     fn draw_conf(&self, state: &mut DrawState) -> String {
         let mut s = String::new();
 
-        write!(&mut s, "\n").unwrap();
-        state.pad(&mut s);
         write!(&mut s, "[ ").unwrap();
 
         let mut iter = self.children().iter();

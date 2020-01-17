@@ -15,6 +15,8 @@ pub enum SearchResult {
     None,
 }
 
+/// The type passed to the `select` method on `Method`
+/// contains slices of handles and metadata
 pub struct SearchIn<'a, C, H>
 where
     C: Compound<H>,
@@ -29,11 +31,7 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
-    pub fn new(handles: &'a [Handle<C, H>], meta: &'a [C::Meta]) -> Self {
-        SearchIn { handles, meta }
-    }
-
-    pub fn new_with_offset(
+    pub(crate) fn new_with_offset(
         offset: usize,
         handles: &'a [Handle<C, H>],
         mut meta: &'a [C::Meta],
@@ -48,6 +46,7 @@ where
         }
     }
 
+    /// Returns the metadata array for the search
     pub fn meta(&self) -> &[C::Meta] {
         self.meta
     }
