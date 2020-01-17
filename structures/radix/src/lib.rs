@@ -9,8 +9,8 @@ use nibbles::{AsNibbles, NibbleBuf, Nibbles};
 use kelvin::{
     annotation,
     annotations::{Cardinality, MaxKey, MaxKeyType},
-    ByteHash, Compound, Content, DebugDraw, Handle, HandleMut, HandleType, Map,
-    Method, SearchResult, Sink, Source,
+    ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
+    SearchResult, Sink, Source,
 };
 
 const N_BUCKETS: usize = 17;
@@ -52,11 +52,23 @@ where
     fn select(&mut self, handles: &[Handle<C, H>]) -> SearchResult {
         println!("SELECT {:?}", self);
 
+        for i in 0..17 {
+            print!(
+                "{} {:?} : {:?} ",
+                i,
+                handles[i].handle_type(),
+                handles[i].meta().as_nibbles()
+            );
+        }
+        println!();
+
         let nibble = self.pop_nibble();
 
         let i = nibble + 1;
 
         let nibbles = handles[i].meta().as_nibbles();
+
+        println!("nibbles at {} {:?}", i, nibbles);
 
         let common_len = dbg!(nibbles.common_prefix(self)).len();
         let search_len = self.len();
@@ -98,6 +110,8 @@ where
 
     /// Insert key-value pair into the Radix, optionally returning expelled value
     fn _insert(&mut self, search: &mut Nibbles, v: V) -> io::Result<Option<V>> {
+        println!("insert with search {:?}", search);
+
         // Leaf case, for keys that are subsets of other keys
         if search.len() == 0 {
             match self.0[0].handle_type() {
@@ -109,7 +123,7 @@ where
                     return Ok(Some(
                         mem::replace(&mut self.0[0], Handle::new_leaf(v))
                             .into_leaf(),
-                    ))
+                    ));
                 }
                 HandleType::Node => unreachable!("Invalid in Leaf position"),
             }
@@ -117,47 +131,170 @@ where
 
         let i = search.pop_nibble() + 1;
 
-        match self.0[i].handle_type() {
-            HandleType::None => {
-                let mut handle = Handle::new_leaf(v);
-                *handle.meta_mut() = (*search).into();
-                self.0[i] = handle;
-                return Ok(None);
-            }
-            HandleType::Leaf => {
-                let old_leaf_meta = self.0[i].take_meta();
-                let mut old_leaf_suffix = old_leaf_meta.as_nibbles();
-                let common: NibbleBuf =
-                    search.common_prefix(&old_leaf_suffix).into();
+        println!(
+            "looking at {} {:?} with meta {:?} and search {:?}",
+            i,
+            self.0[i].handle_type(),
+            self.0[i].meta(),
+            search
+        );
 
-                let mut new_node = Self::new();
+        let path_len = self.0[i].meta().len();
+        let common_len =
+            search.common_prefix(&self.0[i].meta().as_nibbles()).len();
 
-                search.trim_front(common.len());
-                new_node._insert(search, v)?;
+        println!("common_len {}", common_len);
 
-                let old_leaf = mem::take(&mut self.0[i]).into_leaf();
-                old_leaf_suffix.trim_front(common.len());
-                new_node._insert(&mut old_leaf_suffix, old_leaf)?;
+        if path_len == 0 {
+            // only empty handles has null meta.
+            println!("case a");
+            let mut leaf = Handle::new_leaf(v);
+            *leaf.meta_mut() = (*search).into();
+            self.0[i] = leaf;
+            return Ok(None);
+        } else if common_len == search.len() {
+            println!("case b");
+            let mut leaf = Handle::new_leaf(v);
+            return Ok(Some(mem::replace(&mut self.0[i], leaf).into_leaf()));
+        } else if common_len > 0 {
+            // we need to split
 
-                let mut new_handle = Handle::new_node(new_node);
-                *new_handle.meta_mut() = common;
-
-                self.0[i] = new_handle;
-
-                return Ok(None);
-            }
-            HandleType::Node => {
-                let common_len =
-                    search.common_prefix(&self.0[i].meta().as_nibbles()).len();
-                if let HandleMut::Node(node) = &mut *self.0[i].inner_mut()? {
-                    search.trim_front(common_len);
-                    return node._insert(search, v);
-                } else {
-                    unreachable!()
-                }
-            }
-            _ => unimplemented!(),
+            println!("case c");
+            unimplemented!("b");
+        } else {
+            unimplemented!()
         }
+
+        unimplemented!("dorp")
+
+        // match self.0[i].handle_type() {
+        //     HandleType::None => {
+        //         let mut handle = Handle::new_leaf(v);
+        //         *handle.meta_mut() = (*search).into();
+        //         self.0[i] = handle;
+        //         println!(
+        //             "inserted into position {} with meta {:?}",
+        //             i,
+        //             self.0[i].meta()
+        //         );
+        //         return Ok(None);
+        //     }
+        //     HandleType::Leaf => {
+        //         let old_leaf_meta = self.0[i].take_meta();
+        //         let mut old_leaf_suffix = old_leaf_meta.as_nibbles();
+        //         let common: NibbleBuf =
+        //             search.common_prefix(&old_leaf_suffix).into();
+
+        //         let mut new_node = Self::new();
+
+        //         search.trim_front(common.len());
+        //         new_node._insert(search, v)?;
+
+        //         let old_leaf = mem::take(&mut self.0[i]).into_leaf();
+        //         old_leaf_suffix.trim_front(common.len());
+        //         new_node._insert(&mut old_leaf_suffix, old_leaf)?;
+
+        //         let mut new_handle = Handle::new_node(new_node);
+        //         *new_handle.meta_mut() = common;
+
+        //         self.0[i] = new_handle;
+
+        //         return Ok(None);
+        //     }
+        //     HandleType::Node => {
+        //         let path_len = self.0[i].meta().len();
+        //         let common_len =
+        //             search.common_prefix(&self.0[i].meta().as_nibbles()).len();
+
+        //         println!("path len {}, common len {}", path_len, common_len);
+
+        //         if path_len <= common_len {
+        //             // just follow the branch and recurse
+        //             if let HandleMut::Node(node) =
+        //                 &mut *self.0[i].inner_mut()?
+        //             {
+        //                 search.trim_front(common_len);
+        //                 return node._insert(search, v);
+        //             } else {
+        //                 unreachable!()
+        //             }
+        //         } else {
+        //             // we cannot enter the node, since it has a prefix that
+        //             // clashes with our search.
+
+        //             // remove old meta, and calculate the common path.
+
+        //             let mut old_meta = self.0[i].take_meta();
+        //             let common = search.common_prefix(&old_meta.as_nibbles());
+
+        //             println!("common: {:?}", common);
+
+        //             // remove old node
+
+        //             let mut old_node_handle = mem::take(&mut self.0[i]);
+
+        //             let new_node = Self::new();
+
+        //             // insert
+
+        //             // the meta of the new_node handle will be the old_meta, with the common
+        //             // nibbles trimmed off
+
+        //             let mut new_node_handle = Handle::new_node(new_node);
+        //             old_meta.trim_front(common.len());
+
+        //             println!("meta of new_node {:?}", old_meta);
+
+        //             *new_node_handle.meta_mut() = old_meta;
+
+        //             self.0[i] = new_node_handle;
+
+        //             unimplemented!()
+
+        //             // // inserting one more node level inbetween this and the current
+        //             // // continued path
+        //             // let old_path = self.0[i].take_meta();
+
+        //             // println!("old_path {:?}", old_path);
+
+        //             // // setup the new path segments
+        //             // let mut path_a = old_path.clone();
+        //             // let mut path_b = old_path;
+
+        //             // path_a.trim_front(common_len);
+        //             // let keep_back = path_b.len() - common_len;
+
+        //             // println!("path_b pre trim of {}: {:?}", keep_back, path_b);
+
+        //             // path_b.trim_back(keep_back);
+
+        //             // // do the swap
+
+        //             // let mut old_node_handle =
+        //             //     mem::replace(&mut self.0[i], Handle::new_empty());
+
+        //             // let mut new_node = Self::new();
+
+        //             // println!("path A {:?}, path B: {:?}", path_a, path_b);
+
+        //             // let pos = path_a.pop_nibble() + 1;
+
+        //             // *old_node_handle.meta_mut() = path_a;
+        //             // new_node.0[pos] = old_node_handle;
+
+        //             // search.trim_front(1);
+        //             // println!("RECURSE WITH {:?}", search);
+        //             // new_node._insert(search, v)?;
+
+        //             // let mut new_node_handle = Handle::new_node(new_node);
+        //             // *new_node_handle.meta_mut() = path_b;
+
+        //             // self.0[i] = new_node_handle;
+
+        //             // Ok(None)
+        //         }
+        //     }
+        // }
     }
 
     /// Remove element with given key, returning it.
@@ -246,19 +383,29 @@ mod test {
     #[test]
     fn bigger_map() {
         let mut h = Radix::<_, _, Blake2b>::new();
-        for i in 0u16..16 {
+        for i in 0u16..=16 {
             let b = i.to_be_bytes();
             println!("-- INSERTING {} --", i);
             h.insert(b, i).unwrap();
 
             println!("{}", h.draw());
 
-            for test in 0u16..=i {
-                println!("-- GETTING {} --", test);
-                let t = test.to_be_bytes();
-                assert_eq!(*h.get(&t).unwrap().unwrap(), test);
-            }
+            // assert_eq!(*h.get(&b).unwrap().unwrap(), i);
         }
+    }
+
+    #[test]
+    fn splitting() {
+        let mut h = Radix::<_, _, Blake2b>::new();
+        h.insert(vec![0x00, 0x00], 0).unwrap();
+        println!("{}", h.draw());
+        assert_eq!(h.insert(vec![0x00, 0x00], 0).unwrap(), Some(0));
+        println!("{}", h.draw());
+        h.insert(vec![0x00, 0x10], 8).unwrap();
+        println!("{}", h.draw());
+
+        assert_eq!(*h.get(&vec![0x00, 0x00]).unwrap().unwrap(), 0);
+        // assert_eq!(*h.get(&[0x00, 0x08]).unwrap().unwrap(), 8);
     }
 
     quickcheck_map!(|| Radix::new());

@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::compound::Compound;
 use crate::handle::{Handle, HandleRef};
-use crate::search::{Method, SearchResult};
+use crate::search::{Method, SearchIn, SearchResult};
 
 // how deep the branch can be without allocating
 const STACK_BRANCH_MAX_DEPTH: usize = 6;
@@ -218,11 +218,16 @@ where
 
     fn search<M: Method<C, H>>(&mut self, method: &mut M) -> io::Result<Found> {
         let node = self.inner_immutable();
-        let children = node.children();
-        if self.ofs + 1 > children.len() {
+        let children_len = node.children().len();
+        if self.ofs + 1 > children_len {
             Ok(Found::None)
         } else {
-            Ok(match method.select(&children[self.ofs..]) {
+            let handles = SearchIn::new_with_offset(
+                self.ofs,
+                node.children(),
+                node.meta(),
+            );
+            Ok(match method.select(handles) {
                 SearchResult::Leaf(i) => {
                     self.ofs += i;
                     Found::Leaf

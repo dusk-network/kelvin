@@ -71,15 +71,18 @@ impl<'a> Nibbles<'a> {
     pub fn pop_nibble(&mut self) -> usize {
         let nibble = self.get(0);
         self.ofs_front += 1;
+        debug_assert!(self.ofs_front <= self.ofs_back);
         nibble
     }
 
     pub fn trim_front(&mut self, by: usize) {
         self.ofs_front += by;
+        debug_assert!(self.ofs_front <= self.ofs_back)
     }
 
     pub fn trim_back(&mut self, by: usize) {
         self.ofs_back -= by;
+        debug_assert!(self.ofs_front <= self.ofs_back)
     }
 
     pub fn len(&self) -> usize {
@@ -153,6 +156,23 @@ impl NibbleBuf {
 
     pub fn len(&self) -> usize {
         self.ofs_back - self.ofs_front
+    }
+
+    pub fn trim_front(&mut self, by: usize) {
+        self.ofs_front += by;
+        debug_assert!(self.ofs_front <= self.ofs_back)
+    }
+
+    pub fn trim_back(&mut self, by: usize) {
+        self.ofs_back -= by;
+        debug_assert!(self.ofs_front <= self.ofs_back)
+    }
+
+    pub fn pop_nibble(&mut self) -> usize {
+        let nibble = self.get(0);
+        self.ofs_front += 1;
+        debug_assert!(self.ofs_front <= self.ofs_back);
+        nibble
     }
 }
 

@@ -2,6 +2,8 @@ use crate::compound::Compound;
 use crate::handle::{Handle, HandleType};
 use crate::ByteHash;
 
+use std::ops::Deref;
+
 #[derive(Debug)]
 /// Result of searching through a node
 pub enum SearchResult {
@@ -13,6 +15,56 @@ pub enum SearchResult {
     None,
 }
 
+pub struct SearchIn<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    handles: &'a [Handle<C, H>],
+    meta: &'a [C::Meta],
+}
+
+impl<'a, C, H> SearchIn<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    pub fn new(handles: &'a [Handle<C, H>], meta: &'a [C::Meta]) -> Self {
+        SearchIn { handles, meta }
+    }
+
+    pub fn new_with_offset(
+        offset: usize,
+        handles: &'a [Handle<C, H>],
+        mut meta: &'a [C::Meta],
+    ) -> Self {
+        // we might have default empty metadata
+        if meta.len() != 0 {
+            meta = &meta[offset..]
+        }
+        SearchIn {
+            handles: &handles[offset..],
+            meta,
+        }
+    }
+
+    pub fn meta(&self) -> &[C::Meta] {
+        self.meta
+    }
+}
+
+impl<'a, C, H> Deref for SearchIn<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    type Target = [Handle<C, H>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.handles
+    }
+}
+
 /// Trait for searching through tree structured data
 pub trait Method<C, H>
 where
@@ -20,7 +72,7 @@ where
     H: ByteHash,
 {
     /// Select among the handles of the node
-    fn select(&mut self, handles: &[Handle<C, H>]) -> SearchResult;
+    fn select(&mut self, handles: SearchIn<C, H>) -> SearchResult;
 }
 
 #[derive(Clone)]
@@ -31,7 +83,7 @@ where
     H: ByteHash,
     C: Compound<H>,
 {
-    fn select(&mut self, handles: &[Handle<C, H>]) -> SearchResult
+    fn select(&mut self, handles: SearchIn<C, H>) -> SearchResult
     where
         C: Compound<H>,
         H: ByteHash,

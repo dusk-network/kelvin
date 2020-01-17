@@ -38,7 +38,7 @@ pub use crate::map::{
     Map, ValIterable, ValPath, ValPathMut, ValRef, ValRefMut, KV,
 };
 pub use crate::root::Root;
-pub use crate::search::{Method, SearchResult};
+pub use crate::search::{Method, SearchIn, SearchResult};
 pub use crate::sink::Sink;
 pub use crate::source::Source;
 pub use crate::store::{Shared, Snapshot, Store};

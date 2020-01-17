@@ -10,7 +10,7 @@ use cache::Cached;
 use crate::annotations::Annotation;
 use crate::compound::Compound;
 use crate::content::Content;
-use crate::debug_draw::DebugDraw;
+use crate::debug_draw::{DebugDraw, DrawState};
 use crate::sink::Sink;
 use crate::source::Source;
 use crate::store::Snapshot;
@@ -57,7 +57,7 @@ pub enum HandleType {
 
 /// The user-facing type for handles, the main type to build trees
 #[derive(Clone)]
-pub struct Handle<C, H>(HandleInner<C, H>, C::Meta)
+pub struct Handle<C, H>(HandleInner<C, H>)
 where
     C: Compound<H>,
     H: ByteHash;
@@ -161,7 +161,7 @@ where
     H: ByteHash,
 {
     fn default() -> Self {
-        Handle(HandleInner::None, Default::default())
+        Handle(HandleInner::None)
     }
 }
 
@@ -193,7 +193,6 @@ where
     H: ByteHash,
 {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
-        self.1.persist(sink)?;
         match self.0 {
             HandleInner::None => sink.write_all(&[0]),
             HandleInner::Leaf(ref mut leaf) => {
@@ -215,24 +214,18 @@ where
     }
 
     fn restore(source: &mut Source<H>) -> io::Result<Self> {
-        let meta = C::Meta::restore(source)?;
         let mut tag = [0u8];
         source.read_exact(&mut tag)?;
         match tag {
-            [0] => Ok(Handle(HandleInner::None, meta)),
-            [1] => {
-                Ok(Handle(HandleInner::Leaf(C::Leaf::restore(source)?), meta))
-            }
+            [0] => Ok(Handle(HandleInner::None)),
+            [1] => Ok(Handle(HandleInner::Leaf(C::Leaf::restore(source)?))),
             [2] => {
                 let mut h = H::Digest::default();
                 source.read_exact(h.as_mut())?;
-                Ok(Handle(
-                    HandleInner::Persisted(
-                        Snapshot::new(h, source.store()),
-                        C::Annotation::restore(source)?,
-                    ),
-                    meta,
-                ))
+                Ok(Handle(HandleInner::Persisted(
+                    Snapshot::new(h, source.store()),
+                    C::Annotation::restore(source)?,
+                )))
             }
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -249,19 +242,19 @@ where
 {
     /// Constructs a new leaf Handle
     pub fn new_leaf(l: C::Leaf) -> Handle<C, H> {
-        Handle(HandleInner::Leaf(l), Default::default())
+        Handle(HandleInner::Leaf(l))
     }
 
     /// Constructs a new node Handle
     pub fn new_node<I: Into<Box<C>>>(n: I) -> Handle<C, H> {
         let node = n.into();
         let ann = node.annotation().expect("Empty node handles are invalid");
-        Handle(HandleInner::Node(node, ann), Default::default())
+        Handle(HandleInner::Node(node, ann))
     }
 
     /// Constructs a new empty node Handle
     pub fn new_empty() -> Handle<C, H> {
-        Handle(HandleInner::None, Default::default())
+        Handle(HandleInner::None)
     }
 
     /// Converts handle into leaf, panics on mismatching type
@@ -356,21 +349,6 @@ where
         }
     }
 
-    /// Returns a reference to the metadata of the handle
-    pub fn meta(&self) -> &C::Meta {
-        &self.1
-    }
-
-    /// Returns a mutable reference to the metadata of the handle
-    pub fn meta_mut(&mut self) -> &mut C::Meta {
-        &mut self.1
-    }
-
-    /// Returns a mutable reference to the metadata of the handle
-    pub fn take_meta(&mut self) -> C::Meta {
-        mem::replace(&mut self.1, Default::default())
-    }
-
     /// Get a wrapped mutable reference to the inner node
     pub fn inner_mut(&mut self) -> io::Result<HandleMutWrap<C, H>> {
         Ok(match self.0 {
@@ -391,11 +369,7 @@ where
                     mem::replace(&mut self.0, HandleInner::None)
                 {
                     let restored = snap.restore()?;
-                    let meta = self.meta().clone();
-                    *self = Handle(
-                        HandleInner::Node(Box::new(restored), ann),
-                        meta,
-                    );
+                    *self = Handle(HandleInner::Node(Box::new(restored), ann));
                     return self.inner_mut();
                 } else {
                     unreachable!()
@@ -435,15 +409,22 @@ impl<C, H> Handle<C, H>
 where
     C: Compound<H>,
     C::Leaf: std::fmt::Debug,
+    C::Meta: std::fmt::Debug,
     H: ByteHash,
 {
     /// Draw contents of handle, for debug use
-    pub fn draw(&self) -> String {
-        match self.0 {
-            HandleInner::None => "□ ".to_string(),
-            HandleInner::Leaf(ref l) => format!("{:?} ", l),
-            HandleInner::Node(ref n, _) => n.draw(),
-            _ => unimplemented!(),
-        }
+    pub fn draw_conf(&self, state: &mut DrawState) -> String {
+        state.recursion += 1;
+        let res = format!(
+            "{}",
+            match self.0 {
+                HandleInner::None => "□ ".to_string(),
+                HandleInner::Leaf(ref l) => format!("{:?} ", l),
+                HandleInner::Node(ref n, _) => n.draw_conf(state),
+                _ => unimplemented!(),
+            },
+        );
+        state.recursion -= 1;
+        res
     }
 }

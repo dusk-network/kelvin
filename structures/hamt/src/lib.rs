@@ -8,7 +8,7 @@ use kelvin::{
     annotation,
     annotations::{Cardinality, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleOwned, HandleRef,
-    HandleType, Map, Method, SearchResult, Sink, Source, KV,
+    HandleType, Map, Method, SearchIn, SearchResult, Sink, Source, KV,
 };
 use seahash::SeaHasher;
 use std::hash::{Hash, Hasher};
@@ -73,7 +73,7 @@ where
     O: ?Sized + Eq,
     H: ByteHash,
 {
-    fn select(&mut self, handles: &[Handle<C, H>]) -> SearchResult {
+    fn select(&mut self, handles: SearchIn<C, H>) -> SearchResult {
         let slot = calculate_slot(self.hash, self.depth);
         self.depth += 1;
         match handles[slot].leaf().map(Borrow::borrow) {
