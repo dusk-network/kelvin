@@ -208,10 +208,6 @@ where
     H: ByteHash,
 {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
-        println!("persisting {} {}", self.ofs_front, self.ofs_back);
-
-        println!("bytes {:?}", self.bytes);
-
         let byte_range_start = self.ofs_front / 2;
         let byte_range_end = self.ofs_back / 2;
 
@@ -224,16 +220,6 @@ where
         new_ofs_front.persist(sink)?;
         new_ofs_back.persist(sink)?;
 
-        println!(
-            "persisting start {}, end {}",
-            byte_range_start, byte_range_end
-        );
-
-        println!(
-            "writing bytes: {:?}",
-            &self.bytes[byte_range_start..byte_range_end]
-        );
-
         sink.write_all(&self.bytes[byte_range_start..=byte_range_end])
     }
 
@@ -241,11 +227,7 @@ where
         let ofs_front = u16::restore(source)? as usize;
         let ofs_back = u16::restore(source)? as usize;
 
-        println!("restoring {} {}", ofs_front, ofs_back);
-
         let byte_len = ofs_back / 2 + 1;
-
-        println!("restoring bytes: {}", byte_len);
 
         let mut smallvec = SmallVec::with_capacity(byte_len);
         for _ in 0..byte_len {
@@ -341,9 +323,6 @@ mod test {
     fn nibble_common() {
         let a = NibbleBuf::new(&[0x01, 0x23, 0x45, 0x67, 0x89]);
         let b = NibbleBuf::new(&[0x01, 0x23, 0x46, 0xff]);
-
-        println!("a: {:?}", a);
-        println!("b: {:?}", b);
 
         let common: NibbleBuf = a.as_nibbles().common_prefix(&b).into();
 
