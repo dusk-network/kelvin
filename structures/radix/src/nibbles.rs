@@ -1,15 +1,9 @@
 use std::cmp;
 use std::fmt;
 use std::io::{self, Write};
+use std::mem;
 
-use kelvin::{ByteHash, Content, Sink, Source};
-use smallvec::SmallVec;
-
-// The maximum number of bytes to represent segments inline, before spilling to heap
-//
-// This is to make a compromize between wasting space in the memory representation,
-// and avoiding unnecessary heap lookups.
-const SEGMENT_SIZE: usize = 4;
+use kelvin::{tests::arbitrary, ByteHash, Content, Sink, Source};
 
 pub trait AsNibbles {
     fn as_nibbles(&self) -> Nibbles;
@@ -120,11 +114,37 @@ impl<'a> fmt::Debug for Nibbles<'a> {
         write!(f, "]")
     }
 }
+
 #[derive(Clone, Default)]
 pub struct NibbleBuf {
-    bytes: SmallVec<[u8; SEGMENT_SIZE]>,
+    bytes: Vec<u8>,
     ofs_front: usize,
     ofs_back: usize,
+}
+
+impl arbitrary::Arbitrary for NibbleBuf {
+    fn arbitrary(
+        u: &mut arbitrary::Unstructured<'_>,
+    ) -> arbitrary::Result<Self> {
+        let bytes = Vec::arbitrary(u)?;
+        let (mut ofs_front, mut ofs_back);
+        if bytes.len() > 0 {
+            ofs_front = u16::arbitrary(u)? % (bytes.len() * 2) as u16;
+            ofs_back = u16::arbitrary(u)? % (bytes.len() * 2) as u16;
+        } else {
+            ofs_front = 0;
+            ofs_back = 0;
+        }
+
+        if ofs_front > ofs_back {
+            mem::swap(&mut ofs_front, &mut ofs_back)
+        }
+        Ok(NibbleBuf {
+            bytes,
+            ofs_front: ofs_front as usize,
+            ofs_back: ofs_back as usize,
+        })
+    }
 }
 
 impl PartialEq for NibbleBuf {
@@ -143,8 +163,10 @@ impl PartialEq for NibbleBuf {
 
 impl NibbleBuf {
     pub fn new(bytes: &[u8]) -> Self {
+        let mut vec: Vec<u8> = Vec::with_capacity(bytes.len());
+        vec.extend_from_slice(bytes);
         NibbleBuf {
-            bytes: bytes.into(),
+            bytes: vec,
             ofs_front: 0,
             ofs_back: bytes.len() * 2,
         }
@@ -184,7 +206,7 @@ impl fmt::Debug for NibbleBuf {
 impl Into<NibbleBuf> for Nibbles<'_> {
     fn into(self) -> NibbleBuf {
         NibbleBuf {
-            bytes: SmallVec::from_slice(&self.bytes),
+            bytes: self.bytes.into(),
             ofs_front: self.ofs_front,
             ofs_back: self.ofs_back,
         }
@@ -201,15 +223,25 @@ impl AsNibbles for NibbleBuf {
     }
 }
 
-// The PathSegment is encoded as length in a `u16`, using the most significant
-// bit as the bool value.
 impl<H> Content<H> for NibbleBuf
 where
     H: ByteHash,
 {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
+        // different cases illustrated
+
+        // A [|0 0, 0 0|] 0 3 - two bytes
+
+        // B [|0 0, 0 0, 0|0 ] 0 4 - three bytes
+
+        // B [ 0|0, 0 0| ] 1 3 - two bytes
+
+        // B [ 0|0, 0 0, 0|0 ] 1 4 - three bytes
+
         let byte_range_start = self.ofs_front / 2;
-        let byte_range_end = self.ofs_back / 2;
+        let byte_range_end = (self.ofs_back + 1) / 2;
+
+        // if both are odd, end range needs to be one longer
 
         // normalize offsets
         let mut new_ofs_front: u16 =
@@ -220,22 +252,22 @@ where
         new_ofs_front.persist(sink)?;
         new_ofs_back.persist(sink)?;
 
-        sink.write_all(&self.bytes[byte_range_start..=byte_range_end])
+        sink.write_all(&self.bytes[byte_range_start..byte_range_end])
     }
 
     fn restore(source: &mut Source<H>) -> io::Result<Self> {
         let ofs_front = u16::restore(source)? as usize;
         let ofs_back = u16::restore(source)? as usize;
 
-        let byte_len = ofs_back / 2 + 1;
+        let byte_len = (ofs_back + 1) / 2;
 
-        let mut smallvec = SmallVec::with_capacity(byte_len);
+        let mut vec = Vec::with_capacity(byte_len);
         for _ in 0..byte_len {
-            smallvec.push(u8::restore(source)?)
+            vec.push(u8::restore(source)?)
         }
 
         Ok(NibbleBuf {
-            bytes: smallvec,
+            bytes: vec,
             ofs_front,
             ofs_back,
         })
@@ -246,77 +278,11 @@ where
 mod test {
     use super::*;
 
-    use kelvin::{Blake2b, Store};
+    use kelvin::{tests::fuzz_content, Blake2b};
 
     #[test]
-    fn path_segment_encoding() {
-        let store = Store::<Blake2b>::volatile().unwrap();
-
-        for len in 0..32 {
-            let mut smallvec = SmallVec::new();
-            for i in 0..len {
-                smallvec.push(i as u8);
-
-                let mut a = NibbleBuf {
-                    bytes: smallvec.clone(),
-                    ofs_front: 0,
-                    ofs_back: i / 2,
-                };
-
-                let mut b = NibbleBuf {
-                    bytes: smallvec.clone(),
-                    ofs_front: 1,
-                    ofs_back: i / 2 + 1,
-                };
-
-                let mut c = NibbleBuf {
-                    bytes: smallvec.clone(),
-                    ofs_front: 0,
-                    ofs_back: i / 2,
-                };
-
-                let mut d = NibbleBuf {
-                    bytes: smallvec.clone(),
-                    ofs_front: 1,
-                    ofs_back: i / 2 + 1,
-                };
-
-                let snap_a = store.persist(&mut a).unwrap();
-                let a2 = store.restore(&snap_a).unwrap();
-                assert_eq!(a, a2);
-
-                let snap_b = store.persist(&mut b).unwrap();
-                let b2 = store.restore(&snap_b).unwrap();
-                assert_eq!(b, b2);
-
-                let snap_c = store.persist(&mut c).unwrap();
-                let c2 = store.restore(&snap_c).unwrap();
-                assert_eq!(c, c2);
-
-                let snap_d = store.persist(&mut d).unwrap();
-                let d2 = store.restore(&snap_d).unwrap();
-                assert_eq!(d, d2);
-            }
-        }
-    }
-
-    #[test]
-    fn nibble_encoding() {
-        let a = NibbleBuf::new(&[0, 0]);
-        for i in 0..4 {
-            assert_eq!(a.get(i), 0);
-        }
-        let a = NibbleBuf::new(&[255, 255]);
-        for i in 0..4 {
-            assert_eq!(a.get(i), 0xf);
-        }
-
-        let a = NibbleBuf::new(&[0xab, 0xcd]);
-
-        assert_eq!(a.get(0), 0xa);
-        assert_eq!(a.get(1), 0xb);
-        assert_eq!(a.get(2), 0xc);
-        assert_eq!(a.get(3), 0xd);
+    fn fuzz() {
+        fuzz_content::<NibbleBuf, Blake2b>();
     }
 
     #[test]

@@ -256,7 +256,7 @@ mod test {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    use kelvin::{quickcheck_map, Blake2b, DebugDraw};
+    use kelvin::{quickcheck_map, Blake2b};
 
     #[test]
     fn trivial_map() {
