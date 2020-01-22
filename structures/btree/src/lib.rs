@@ -10,7 +10,7 @@ use kelvin::{
     annotation,
     annotations::{Cardinality, Counter, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
-    SearchResult, Sink, Source, KV,
+    SearchIn, SearchResult, Sink, Source, KV,
 };
 
 const N: usize = 2;
@@ -62,7 +62,7 @@ where
     K: Ord + Borrow<O>,
     O: Ord + ?Sized,
 {
-    fn select(&mut self, handles: &[Handle<C, H>]) -> SearchResult {
+    fn select(&mut self, handles: SearchIn<C, H>) -> SearchResult {
         for (i, h) in handles.iter().enumerate() {
             if let Some(ann) = h.annotation() {
                 let handle_key: &MaxKey<K> = (*ann).borrow();
@@ -149,7 +149,7 @@ where
         let ann_key: &K = &**borrow;
         let len = self.0.len();
 
-        match BTreeSearch::new(ann_key).select(self.children()) {
+        match BTreeSearch::new(ann_key).select(self.children().into()) {
             SearchResult::Leaf(i) => {
                 action = Action::Replace(i);
             }
@@ -283,7 +283,7 @@ where
         // The default action
         let mut action = Action::Noop;
 
-        match BTreeSearch::new(k).select(self.children()) {
+        match BTreeSearch::new(k).select(self.children().into()) {
             SearchResult::Leaf(i) => {
                 action = Action::Remove(i);
             }
@@ -524,12 +524,10 @@ mod test {
         let mut h = BTree::<_, _, Blake2b>::new();
         let bigger = 4;
         for i in 0..bigger {
-            println!("{}", i);
             h.insert(i, i).unwrap();
         }
         for i in 0..bigger {
             let i = bigger - i - 1;
-            println!("rev {}", i);
             assert_eq!(h.remove(&i).unwrap().unwrap(), i);
         }
     }
@@ -539,7 +537,6 @@ mod test {
         let mut h = BTree::<_, _, Blake2b>::new();
         let bigger = 4;
         for i in 0..bigger {
-            println!("{}", i);
             h.insert(i, i).unwrap();
         }
         for i in 0..bigger {

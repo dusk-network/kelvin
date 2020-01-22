@@ -339,7 +339,6 @@ mod test {
     fn bigger_map() {
         let mut h = HAMT::<_, _, Blake2b>::new();
         for i in 0..1024 {
-            println!("{}", i);
             assert!(h.get(&i).unwrap().is_none());
             h.insert(i, i).unwrap();
             assert_eq!(*h.get(&i).unwrap().unwrap(), i);

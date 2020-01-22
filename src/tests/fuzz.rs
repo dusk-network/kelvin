@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use crate::{ByteHash, Content, Store};
 use arbitrary::{Arbitrary, Unstructured};
 
-const FUZZ_ITERATIONS: usize = 1024 * 32;
+const FUZZ_ITERATIONS: usize = 1024;
 
 fn hash<T: Hash>(t: T) -> u64 {
     let mut hasher = DefaultHasher::new();

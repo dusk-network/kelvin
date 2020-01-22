@@ -26,6 +26,16 @@ where
     meta: &'a [C::Meta],
 }
 
+impl<'a, C, H> From<&'a [Handle<C, H>]> for SearchIn<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    fn from(handles: &'a [Handle<C, H>]) -> Self {
+        SearchIn { handles, meta: &[] }
+    }
+}
+
 impl<'a, C, H> SearchIn<'a, C, H>
 where
     C: Compound<H>,

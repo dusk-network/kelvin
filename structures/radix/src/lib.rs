@@ -83,6 +83,12 @@ where
     }
 }
 
+enum Removed<L> {
+    None,
+    Leaf(L),
+    Collapse(L, L, NibbleBuf, usize),
+}
+
 impl<K, V, H> Radix<K, V, H>
 where
     K: AsRef<[u8]> + Eq + 'static,
@@ -126,13 +132,13 @@ where
         let common: NibbleBuf =
             search.common_prefix(&self.meta[i].as_nibbles()).into();
 
-        if path_len == 0 {
-            // only empty handles has null meta.
+        if self.handles[i].handle_type() == HandleType::None {
             let leaf = Handle::new_leaf(v);
             self.meta[i] = (*search).into();
             self.handles[i] = leaf;
             return Ok(None);
         } else if common.len() == search.len() {
+            // found the leaf
             let leaf = Handle::new_leaf(v);
             return Ok(Some(
                 mem::replace(&mut self.handles[i], leaf).into_leaf(),
@@ -173,8 +179,123 @@ where
     }
 
     /// Remove element with given key, returning it.
-    pub fn remove(&mut self, _k: &K) -> io::Result<Option<V>> {
-        unimplemented!()
+    pub fn remove(&mut self, k: &K) -> io::Result<Option<V>> {
+        debug_assert!(k.as_ref().len() <= MAX_KEY_LEN);
+        let mut search = Nibbles::new(k.as_ref());
+        match self._remove(&mut search, 0)? {
+            Removed::None => Ok(None),
+            Removed::Leaf(l) => Ok(Some(l)),
+            _ => unreachable!(),
+        }
+    }
+
+    fn _remove(
+        &mut self,
+        search: &mut Nibbles,
+        depth: usize,
+    ) -> io::Result<Removed<V>> {
+        let collapse = {
+            if search.len() == 0 {
+                match self.handles[0].handle_type() {
+                    HandleType::None => {
+                        return Ok(Removed::None);
+                    }
+                    HandleType::Leaf => {
+                        return Ok(Removed::Leaf(
+                            mem::take(&mut self.handles[0]).into_leaf(),
+                        ));
+                    }
+                    HandleType::Node => {
+                        unreachable!("Invalid in Leaf position")
+                    }
+                }
+            }
+
+            let i = search.pop_nibble() + 1;
+
+            let path_len = self.meta[i].len();
+
+            let common: NibbleBuf =
+                search.common_prefix(&self.meta[i].as_nibbles()).into();
+
+            if self.handles[i].handle_type() == HandleType::None {
+                return Ok(Removed::None);
+            } else if common.len() == search.len() {
+                // found the leaf
+                self.meta[i] = Default::default();
+                let removed = mem::take(&mut self.handles[i]).into_leaf();
+                if depth > 0 {
+                    if let Some((l, meta, inner_i)) = self.remove_singleton() {
+                        return Ok(Removed::Collapse(
+                            removed, l, meta, inner_i,
+                        ));
+                    }
+                }
+                return Ok(Removed::Leaf(removed));
+            } else if common.len() < path_len {
+                // nothing here
+                return Ok(Removed::None);
+            } else {
+                // recurse
+                if let HandleMut::Node(ref mut node) =
+                    *self.handles[i].inner_mut()?
+                {
+                    search.trim_front(common.len());
+                    match node._remove(search, depth + 1)? {
+                        Removed::Collapse(
+                            removed,
+                            reinsert,
+                            nibbles,
+                            inner_i,
+                        ) => (removed, reinsert, nibbles, i, inner_i),
+
+                        result => return Ok(result),
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
+        };
+
+        // if we get here, we're in the collapse branch.
+
+        let (removed, reinsert, nibbles, i, inner_i) = collapse;
+
+        // get metadata from the to be collapsed node
+
+        if inner_i > 0 {
+            self.meta[i].push(inner_i - 1);
+        }
+
+        self.meta[i].append(&nibbles);
+
+        self.handles[i] = Handle::new_leaf(reinsert);
+
+        // recursion needed?
+
+        return Ok(Removed::Leaf(removed));
+    }
+
+    fn remove_singleton(&mut self) -> Option<(V, NibbleBuf, usize)> {
+        let mut singleton = None;
+
+        for (i, child) in self.handles.iter().enumerate() {
+            match (child.handle_type(), singleton) {
+                (HandleType::None, _) => (),
+                (HandleType::Leaf, None) => singleton = Some(i),
+                (HandleType::Leaf, Some(_)) => return None,
+                (HandleType::Node, _) => return None,
+            }
+        }
+        if let Some(idx) = singleton {
+            Some((
+                mem::take(&mut self.handles[idx]).into_leaf(),
+                mem::take(&mut self.meta[idx]),
+                idx,
+            ))
+        } else {
+            None
+        }
     }
 }
 
@@ -256,7 +377,7 @@ mod test {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    use kelvin::{quickcheck_map, Blake2b};
+    use kelvin::{quickcheck_map, tests::CorrectEmptyState, Blake2b};
 
     #[test]
     fn trivial_map() {
@@ -271,8 +392,23 @@ mod test {
         let mut h = Radix::<_, _, Blake2b>::new();
         for i in 0u16..1024 {
             let b = i.to_be_bytes();
-            h.insert(b, i).unwrap();
+            assert_eq!(h.insert(b, i).unwrap(), None);
             assert_eq!(*h.get(&b).unwrap().unwrap(), i);
+            assert_eq!(h.insert(b, i).unwrap(), Some(i));
+        }
+    }
+
+    #[test]
+    fn insert_remove() {
+        let mut h = Radix::<_, _, Blake2b>::new();
+        let n = 1024;
+        for i in 0u16..n {
+            let b = i.to_be_bytes();
+            h.insert(b, i).unwrap();
+        }
+        for i in 0u16..n {
+            let b = i.to_be_bytes();
+            assert_eq!(h.remove(&b).unwrap(), Some(i));
         }
     }
 
@@ -297,6 +433,34 @@ mod test {
     }
 
     #[test]
+    #[ignore]
+    fn different_length_keys() {
+        let keys = [
+            "cat",
+            "mouse",
+            "m",
+            "dog",
+            "elephant",
+            "hippopotamus",
+            "giraffe",
+            "eel",
+            "spider",
+            "bald eagle",
+            "",
+        ];
+
+        let mut h = Radix::<_, _, Blake2b>::new();
+
+        for i in 0..keys.len() {
+            h.insert(keys[i], i as u16).unwrap();
+        }
+
+        for i in 0..keys.len() {
+            assert_eq!(*h.get(keys[i]).unwrap().unwrap(), i as u16);
+        }
+    }
+
+    #[test]
     fn splitting() {
         let mut h = Radix::<_, _, Blake2b>::new();
         h.insert(vec![0x00, 0x00], 0).unwrap();
@@ -305,6 +469,19 @@ mod test {
 
         assert_eq!(*h.get(&vec![0x00, 0x00]).unwrap().unwrap(), 0);
         assert_eq!(*h.get(&vec![0x00, 0x10]).unwrap().unwrap(), 8);
+    }
+
+    #[test]
+    fn collapse() {
+        let mut h = Radix::<_, _, Blake2b>::new();
+        h.insert(vec![0x00, 0x00], 0).unwrap();
+        h.insert(vec![0x00, 0x10], 0).unwrap();
+
+        assert_eq!(h.remove(&vec![0x00, 0x00]).unwrap(), Some(0));
+
+        assert_eq!(h.remove(&vec![0x00, 0x10]).unwrap(), Some(0));
+
+        h.assert_correct_empty_state();
     }
 
     quickcheck_map!(|| Radix::new());

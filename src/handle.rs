@@ -259,10 +259,15 @@ where
 
     /// Converts handle into leaf, panics on mismatching type
     pub fn into_leaf(self) -> C::Leaf {
+        self.try_into_leaf().expect("Not a leaf")
+    }
+
+    /// Converts a leaf handle into its contained leaf, if any
+    pub fn try_into_leaf(self) -> Option<C::Leaf> {
         if let HandleInner::Leaf(l) = self.0 {
-            l
+            Some(l)
         } else {
-            panic!("Not a leaf")
+            None
         }
     }
 

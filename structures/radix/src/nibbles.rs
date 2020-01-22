@@ -196,6 +196,37 @@ impl NibbleBuf {
         debug_assert!(self.ofs_front <= self.ofs_back);
         nibble
     }
+
+    pub fn set(&mut self, idx: usize, to: usize) {
+        let byte_index = (self.ofs_front + idx) / 2;
+        if byte_index >= self.bytes.len() {
+            self.bytes.push(0);
+        };
+        let byte = &mut self.bytes[byte_index];
+
+        // pick the right nibble from the byte
+        // when front + offset is even, we pick the first
+        if (idx + self.ofs_front) % 2 == 0 {
+            *byte &= 0x0F;
+            *byte |= ((to as u8) << 4) & 0xF0;
+        } else {
+            *byte &= 0xF0;
+            *byte |= to as u8 & 0x0F;
+        }
+    }
+
+    pub fn push(&mut self, nibble: usize) {
+        let i = self.len();
+        self.ofs_back += 1;
+        self.set(i, nibble);
+    }
+
+    pub fn append<A: AsNibbles>(&mut self, other: &A) {
+        let nibbles = other.as_nibbles();
+        for i in 0..nibbles.len() {
+            self.push(nibbles.get(i))
+        }
+    }
 }
 
 impl fmt::Debug for NibbleBuf {
@@ -297,5 +328,33 @@ mod test {
         for i in 0..5 {
             assert_eq!(common.get(i), i);
         }
+    }
+
+    #[test]
+    fn append_nibbles() {
+        let full = NibbleBuf::new(&[0x01, 0x23, 0x45, 0x67, 0x89]);
+
+        let mut a = NibbleBuf::new(&[0x01, 0x23, 0x45]);
+
+        let mut b = NibbleBuf::new(&[0x45, 0x67, 0x89]);
+
+        b.trim_front(1);
+        a.trim_back(1);
+
+        a.append(&b);
+
+        assert_eq!(a, full);
+    }
+
+    #[test]
+    fn set_nibbles() {
+        let mut a = NibbleBuf::new(&[0x00, 0x00]);
+        let b = NibbleBuf::new(&[0x12, 0x34]);
+
+        for i in 0..4 {
+            a.set(i, i + 1);
+        }
+
+        assert_eq!(a, b);
     }
 }

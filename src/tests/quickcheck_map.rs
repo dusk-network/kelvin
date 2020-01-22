@@ -9,7 +9,7 @@ macro_rules! quickcheck_map {
 
         #[allow(unused)]
         use std::collections::HashMap;
-        use $crate::tests::CorrectEmptyState;
+        use $crate::tests::CorrectEmptyState as _;
 
         use $crate::tests::quickcheck::{quickcheck, Arbitrary, Gen};
         #[allow(unused)]
@@ -54,8 +54,7 @@ macro_rules! quickcheck_map {
         }
 
         fn run_ops(ops: Vec<Op>) -> bool {
-            let dir = tempdir().unwrap();
-            let store = Store::<Blake2b>::new(&dir.path()).unwrap();
+            let store = Store::<Blake2b>::volatile();
 
             let mut test = $new_map();
             let mut model = HashMap::new();
