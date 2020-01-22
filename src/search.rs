@@ -47,7 +47,7 @@ where
         mut meta: &'a [C::Meta],
     ) -> Self {
         // we might have default empty metadata
-        if meta.len() != 0 {
+        if !meta.is_empty() {
             meta = &meta[offset..]
         }
         SearchIn {

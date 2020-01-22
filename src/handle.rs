@@ -419,22 +419,18 @@ where
 {
     /// Draw contents of handle, for debug use
     pub fn draw_conf(&self, state: &mut DrawState) -> String {
-        let res = format!(
-            "{}",
-            match self.0 {
-                HandleInner::None => "□ ".to_string(),
-                HandleInner::Leaf(ref l) => format!("{:?} ", l),
-                HandleInner::Node(ref n, _) => {
-                    state.recursion += 1;
-                    format!("\n{}{}", state.pad(), {
-                        let res = n.draw_conf(state);
-                        state.recursion -= 1;
-                        res
-                    })
-                }
-                _ => unimplemented!(),
-            },
-        );
-        res
+        match self.0 {
+            HandleInner::None => "□ ".to_string(),
+            HandleInner::Leaf(ref l) => format!("{:?} ", l),
+            HandleInner::Node(ref n, _) => {
+                state.recursion += 1;
+                format!("\n{}{}", state.pad(), {
+                    let res = n.draw_conf(state);
+                    state.recursion -= 1;
+                    res
+                })
+            }
+            _ => unimplemented!(),
+        }
     }
 }

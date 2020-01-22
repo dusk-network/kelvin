@@ -22,7 +22,7 @@ pub fn fuzz_content<C: Content<H> + Arbitrary + PartialEq, H: ByteHash>() {
 
         let mut content = {
             loop {
-                match C::arbitrary(&mut Unstructured::new(&mut bytes)) {
+                match C::arbitrary(&mut Unstructured::new(&bytes)) {
                     Ok(t) => break t,
                     Err(_) => {
                         entropy += 1;
