@@ -1,6 +1,5 @@
 use std::borrow::Borrow;
 use std::io;
-use std::iter::Iterator;
 use std::marker::PhantomData;
 use std::mem;
 
@@ -10,7 +9,7 @@ use kelvin::{
     annotation,
     annotations::{Cardinality, Counter, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
-    SearchIn, SearchResult, Sink, Source, KV,
+    SearchResult, Sink, Source, KV,
 };
 
 const N: usize = 2;
@@ -54,16 +53,15 @@ impl<'a, K, O: ?Sized> From<&'a O> for BTreeSearch<'a, K, O> {
     }
 }
 
-impl<'a, K, O, C, H> Method<C, H> for BTreeSearch<'a, K, O>
+impl<'a, K, V, O, H> Method<BTree<K, V, H>, H> for BTreeSearch<'a, K, O>
 where
-    C: Compound<H>,
-    C::Annotation: Borrow<MaxKey<K>>,
-    H: ByteHash,
-    K: Ord + Borrow<O>,
+    K: Ord + Borrow<O> + Content<H>,
+    V: Content<H>,
     O: Ord + ?Sized,
+    H: ByteHash,
 {
-    fn select(&mut self, handles: SearchIn<C, H>) -> SearchResult {
-        for (i, h) in handles.iter().enumerate() {
+    fn select(&mut self, compound: &BTree<K, V, H>, _: usize) -> SearchResult {
+        for (i, h) in compound.0.iter().enumerate() {
             if let Some(ann) = h.annotation() {
                 let handle_key: &MaxKey<K> = (*ann).borrow();
                 if self.0 == (**handle_key).borrow() {
@@ -78,9 +76,9 @@ where
                 }
             }
         }
-        let len = handles.len();
+        let len = compound.0.len();
         // Always select last element if node
-        if len > 0 && handles[len - 1].handle_type() == HandleType::Node {
+        if len > 0 && compound.0[len - 1].handle_type() == HandleType::Node {
             SearchResult::Path(len - 1)
         } else {
             SearchResult::None
@@ -149,7 +147,7 @@ where
         let ann_key: &K = &**borrow;
         let len = self.0.len();
 
-        match BTreeSearch::new(ann_key).select(self.children().into()) {
+        match BTreeSearch::new(ann_key).select(self, 0) {
             SearchResult::Leaf(i) => {
                 action = Action::Replace(i);
             }
@@ -283,7 +281,7 @@ where
         // The default action
         let mut action = Action::Noop;
 
-        match BTreeSearch::new(k).select(self.children().into()) {
+        match BTreeSearch::new(k).select(self, 0) {
             SearchResult::Leaf(i) => {
                 action = Action::Remove(i);
             }

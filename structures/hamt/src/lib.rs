@@ -8,7 +8,7 @@ use kelvin::{
     annotation,
     annotations::{Cardinality, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleOwned, HandleRef,
-    HandleType, Map, Method, SearchIn, SearchResult, Sink, Source, KV,
+    HandleType, Map, Method, SearchResult, Sink, Source, KV,
 };
 use seahash::SeaHasher;
 use std::hash::{Hash, Hasher};
@@ -65,18 +65,17 @@ where
     }
 }
 
-impl<'a, K, V, O, C, H> Method<C, H> for HAMTSearch<'a, K, V, O>
+impl<'a, K, V, O, H> Method<HAMT<K, V, H>, H> for HAMTSearch<'a, K, V, O>
 where
-    C: Compound<H>,
-    C::Leaf: Borrow<KV<K, V>>,
-    K: Borrow<O>,
+    K: Borrow<O> + Content<H>,
+    V: Content<H>,
     O: ?Sized + Eq,
     H: ByteHash,
 {
-    fn select(&mut self, handles: SearchIn<C, H>) -> SearchResult {
+    fn select(&mut self, compound: &HAMT<K, V, H>, _: usize) -> SearchResult {
         let slot = calculate_slot(self.hash, self.depth);
         self.depth += 1;
-        match handles[slot].leaf().map(Borrow::borrow) {
+        match compound.0[slot].leaf().map(Borrow::borrow) {
             Some(KV { key, val: _ }) if key.borrow() == self.key => {
                 SearchResult::Leaf(slot)
             }
