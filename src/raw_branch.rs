@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::compound::Compound;
 use crate::handle::{Handle, HandleRef};
-use crate::search::{Method, SearchIn, SearchResult};
+use crate::search::{Method, SearchResult};
 
 // how deep the branch can be without allocating
 const STACK_BRANCH_MAX_DEPTH: usize = 6;
@@ -32,7 +32,7 @@ pub struct Level<'a, C, H> {
     node: NodeRef<'a, C, H>,
 }
 
-pub(crate) struct UnsafeBranch<'a, C, H> {
+pub(crate) struct RawBranch<'a, C, H> {
     levels: SmallVec<[Level<'a, C, H>; STACK_BRANCH_MAX_DEPTH]>,
     exact: bool,
 }
@@ -222,12 +222,7 @@ where
         if self.ofs + 1 > children_len {
             Ok(Found::None)
         } else {
-            let handles = SearchIn::new_with_offset(
-                self.ofs,
-                node.children(),
-                node.meta(),
-            );
-            Ok(match method.select(handles) {
+            Ok(match method.select(&*node, self.ofs) {
                 SearchResult::Leaf(i) => {
                     self.ofs += i;
                     Found::Leaf
@@ -251,7 +246,7 @@ where
     }
 }
 
-impl<'a, C, H> UnsafeBranch<'a, C, H>
+impl<'a, C, H> RawBranch<'a, C, H>
 where
     C: Compound<H>,
     H: ByteHash,
@@ -259,7 +254,7 @@ where
     pub fn new_cached(node: Cached<'a, C>) -> Self {
         let mut vec = SmallVec::new();
         vec.push(Level::new_cached(node));
-        UnsafeBranch {
+        RawBranch {
             levels: vec,
             exact: false,
         }
@@ -268,7 +263,7 @@ where
     pub fn new_mutable(node: &'a mut C) -> Self {
         let mut vec = SmallVec::new();
         vec.push(Level::new_mutable(node));
-        UnsafeBranch {
+        RawBranch {
             levels: vec,
             exact: false,
         }

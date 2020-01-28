@@ -31,7 +31,6 @@ impl<C, H> DebugDraw<H> for C
 where
     C: Compound<H>,
     C::Leaf: std::fmt::Debug,
-    C::Meta: std::fmt::Debug,
     H: ByteHash,
 {
     fn draw_conf(&self, state: &mut DrawState) -> String {

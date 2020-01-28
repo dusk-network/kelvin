@@ -10,7 +10,7 @@ use kelvin::{
     annotation,
     annotations::{Cardinality, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
-    SearchIn, SearchResult, Sink, Source,
+    SearchResult, Sink, Source,
 };
 
 const N_BUCKETS: usize = 17;
@@ -24,14 +24,14 @@ where
     H: ByteHash,
 {
     handles: [Handle<Self, H>; N_BUCKETS],
-    meta: [NibbleBuf; N_BUCKETS],
+    prefixes: [NibbleBuf; N_BUCKETS - 1],
 }
 
 impl<K: 'static, V: Content<H>, H: ByteHash> Clone for Radix<K, V, H> {
     fn clone(&self) -> Self {
         Radix {
             handles: self.handles.clone(),
-            meta: self.meta.clone(),
+            prefixes: self.prefixes.clone(),
         }
     }
 }
@@ -45,23 +45,23 @@ where
     fn default() -> Self {
         Radix {
             handles: Default::default(),
-            meta: Default::default(),
+            prefixes: Default::default(),
         }
     }
 }
 
-impl<C, H> Method<C, H> for Nibbles<'_>
+impl<K, V, H> Method<Radix<K, V, H>, H> for Nibbles<'_>
 where
-    C: Compound<H>,
+    K: 'static,
+    V: Content<H>,
     H: ByteHash,
-    C::Meta: AsNibbles,
 {
-    fn select(&mut self, handles: SearchIn<C, H>) -> SearchResult {
+    fn select(&mut self, compound: &Radix<K, V, H>, _: usize) -> SearchResult {
         let nibble = self.pop_nibble();
 
         let i = nibble + 1;
 
-        let nibbles = handles.meta()[i].as_nibbles();
+        let nibbles = compound.prefixes[i - 1].as_nibbles();
 
         let common_len = nibbles.common_prefix(self).len();
         let search_len = self.len();
@@ -71,7 +71,7 @@ where
                 SearchResult::Leaf(i)
             } else if common_len <= search_len {
                 // if we're descending, we'll trim the search
-                if handles[i].handle_type() == HandleType::Node {
+                if compound.handles[i].handle_type() == HandleType::Node {
                     self.trim_front(common_len)
                 }
                 SearchResult::Path(i)
@@ -127,14 +127,15 @@ where
 
         let i = search.pop_nibble() + 1;
 
-        let path_len = self.meta[i].len();
+        let path_len = self.prefixes[i - 1].len();
 
-        let common: NibbleBuf =
-            search.common_prefix(&self.meta[i].as_nibbles()).into();
+        let common: NibbleBuf = search
+            .common_prefix(&self.prefixes[i - 1].as_nibbles())
+            .into();
 
         if self.handles[i].handle_type() == HandleType::None {
             let leaf = Handle::new_leaf(v);
-            self.meta[i] = (*search).into();
+            self.prefixes[i - 1] = (*search).into();
             self.handles[i] = leaf;
             return Ok(None);
         } else if common.len() == search.len() {
@@ -145,7 +146,7 @@ where
             ));
         } else if common.len() < path_len {
             // we need to split
-            let mut old_path = mem::take(&mut self.meta[i]);
+            let mut old_path = mem::take(&mut self.prefixes[i - 1]);
 
             let mut new_node = Self::new();
 
@@ -155,14 +156,14 @@ where
             let o = old_path.pop_nibble() + 1;
             old_path.trim_front(common.len());
             new_node.handles[o] = old_handle;
-            new_node.meta[o] = old_path;
+            new_node.prefixes[o - 1] = old_path;
 
             // insert into new node
             search.trim_front(common.len());
             new_node._insert(search, v)?;
 
             self.handles[i] = Handle::new_node(new_node);
-            self.meta[i] = common;
+            self.prefixes[i - 1] = common;
 
             return Ok(None);
         } else {
@@ -213,21 +214,24 @@ where
 
             let i = search.pop_nibble() + 1;
 
-            let path_len = self.meta[i].len();
+            let path_len = self.prefixes[i - 1].len();
 
-            let common: NibbleBuf =
-                search.common_prefix(&self.meta[i].as_nibbles()).into();
+            let common: NibbleBuf = search
+                .common_prefix(&self.prefixes[i - 1].as_nibbles())
+                .into();
 
             if self.handles[i].handle_type() == HandleType::None {
                 return Ok(Removed::None);
             } else if common.len() == search.len() {
                 // found the leaf
-                self.meta[i] = Default::default();
+                self.prefixes[i - 1] = Default::default();
                 let removed = mem::take(&mut self.handles[i]).into_leaf();
                 if depth > 0 {
-                    if let Some((l, meta, inner_i)) = self.remove_singleton() {
+                    if let Some((l, prefixes, inner_i)) =
+                        self.remove_singleton()
+                    {
                         return Ok(Removed::Collapse(
-                            removed, l, meta, inner_i,
+                            removed, l, prefixes, inner_i,
                         ));
                     }
                 }
@@ -261,13 +265,11 @@ where
 
         let (removed, reinsert, nibbles, i, inner_i) = collapse;
 
-        // get metadata from the to be collapsed node
-
         if inner_i > 0 {
-            self.meta[i].push(inner_i - 1);
+            self.prefixes[i - 1].push(inner_i - 1);
         }
 
-        self.meta[i].append(&nibbles);
+        self.prefixes[i - 1].append(&nibbles);
 
         self.handles[i] = Handle::new_leaf(reinsert);
 
@@ -290,7 +292,7 @@ where
         if let Some(idx) = singleton {
             Some((
                 mem::take(&mut self.handles[idx]).into_leaf(),
-                mem::take(&mut self.meta[idx]),
+                mem::take(&mut self.prefixes[idx - 1]),
                 idx,
             ))
         } else {
@@ -309,24 +311,24 @@ where
         for i in 0..N_BUCKETS {
             self.handles[i].persist(sink)?
         }
-        // We don't need to store the metadata for the leaf node
+        // We don't need to store the prefixesdata for the leaf node
         // since it will always be []
-        for i in 1..N_BUCKETS - 1 {
-            self.meta[i].persist(sink)?
+        for i in 0..N_BUCKETS - 1 {
+            self.prefixes[i].persist(sink)?
         }
         Ok(())
     }
 
     fn restore(source: &mut Source<H>) -> io::Result<Self> {
         let mut handles: [Handle<Self, H>; N_BUCKETS] = Default::default();
-        let mut meta: [NibbleBuf; N_BUCKETS] = Default::default();
+        let mut prefixes: [NibbleBuf; N_BUCKETS - 1] = Default::default();
         for i in 0..N_BUCKETS {
             handles[i] = Handle::restore(source)?;
         }
-        for i in 1..N_BUCKETS - 1 {
-            meta[i] = NibbleBuf::restore(source)?;
+        for i in 0..N_BUCKETS - 1 {
+            prefixes[i] = NibbleBuf::restore(source)?;
         }
-        Ok(Radix { handles, meta })
+        Ok(Radix { handles, prefixes })
     }
 }
 
@@ -354,7 +356,6 @@ where
     H: ByteHash,
 {
     type Leaf = V;
-    type Meta = NibbleBuf;
     type Annotation = Cardinality<u64>;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
@@ -363,10 +364,6 @@ where
 
     fn children(&self) -> &[Handle<Self, H>] {
         &self.handles
-    }
-
-    fn meta(&self) -> &[Self::Meta] {
-        &self.meta
     }
 }
 

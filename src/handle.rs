@@ -414,7 +414,6 @@ impl<C, H> Handle<C, H>
 where
     C: Compound<H>,
     C::Leaf: std::fmt::Debug,
-    C::Meta: std::fmt::Debug,
     H: ByteHash,
 {
     /// Draw contents of handle, for debug use

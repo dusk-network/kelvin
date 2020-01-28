@@ -445,7 +445,7 @@ where
     V: Content<H>,
 {
     type Leaf = KV<K, V>;
-    type Meta = ();
+
     type Annotation = BTreeAnnotation<K, u64>;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
