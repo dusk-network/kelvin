@@ -9,15 +9,15 @@ use smallvec::SmallVec;
 
 use crate::compound::Compound;
 use crate::handle::{Handle, HandleRef};
-use crate::search::Method;
+use crate::search::{Method, SearchResult};
 
 // how deep the branch can be without allocating
 const STACK_BRANCH_MAX_DEPTH: usize = 6;
 
 pub enum Found {
     Leaf,
-    Node,
-    Nothing,
+    Path,
+    None,
 }
 
 enum NodeRef<'a, C, H> {
@@ -32,9 +32,10 @@ pub struct Level<'a, C, H> {
     node: NodeRef<'a, C, H>,
 }
 
-pub(crate) struct UnsafeBranch<'a, C, H>(
-    SmallVec<[Level<'a, C, H>; STACK_BRANCH_MAX_DEPTH]>,
-);
+pub(crate) struct RawBranch<'a, C, H> {
+    levels: SmallVec<[Level<'a, C, H>; STACK_BRANCH_MAX_DEPTH]>,
+    exact: bool,
+}
 
 impl<'a, C, H> NodeRef<'a, C, H>
 where
@@ -217,20 +218,20 @@ where
 
     fn search<M: Method<C, H>>(&mut self, method: &mut M) -> io::Result<Found> {
         let node = self.inner_immutable();
-        let children = node.children();
-        if self.ofs + 1 > children.len() {
-            Ok(Found::Nothing)
+        let children_len = node.children().len();
+        if self.ofs + 1 > children_len {
+            Ok(Found::None)
         } else {
-            Ok(match method.select(&children[self.ofs..]) {
-                Some(i) => {
+            Ok(match method.select(&*node, self.ofs) {
+                SearchResult::Leaf(i) => {
                     self.ofs += i;
-                    match self.referencing()? {
-                        HandleRef::Leaf(_) => Found::Leaf,
-                        HandleRef::Node(_) => Found::Node,
-                        HandleRef::None => Found::Nothing,
-                    }
+                    Found::Leaf
                 }
-                None => Found::Nothing,
+                SearchResult::Path(i) => {
+                    self.ofs += i;
+                    Found::Path
+                }
+                SearchResult::None => Found::None,
             })
         }
     }
@@ -245,7 +246,7 @@ where
     }
 }
 
-impl<'a, C, H> UnsafeBranch<'a, C, H>
+impl<'a, C, H> RawBranch<'a, C, H>
 where
     C: Compound<H>,
     H: ByteHash,
@@ -253,36 +254,48 @@ where
     pub fn new_cached(node: Cached<'a, C>) -> Self {
         let mut vec = SmallVec::new();
         vec.push(Level::new_cached(node));
-        UnsafeBranch(vec)
+        RawBranch {
+            levels: vec,
+            exact: false,
+        }
     }
 
     pub fn new_mutable(node: &'a mut C) -> Self {
         let mut vec = SmallVec::new();
         vec.push(Level::new_mutable(node));
-        UnsafeBranch(vec)
+        RawBranch {
+            levels: vec,
+            exact: false,
+        }
+    }
+
+    pub(crate) fn exact(&self) -> bool {
+        self.exact
     }
 
     pub fn search<M: Method<C, H>>(
         &mut self,
         method: &mut M,
     ) -> io::Result<()> {
-        while let Some(last) = self.0.last_mut() {
+        self.exact = false;
+        while let Some(last) = self.levels.last_mut() {
             let mut push = None;
             match last.search(method)? {
                 Found::Leaf => {
+                    self.exact = true;
                     break;
                 }
-                Found::Node => match last.referencing()? {
+                Found::Path => match last.referencing()? {
                     HandleRef::Node(cached) => {
                         let level: Level<'a, _, _> = unsafe {
                             mem::transmute(Level::new_cached(cached))
                         };
                         push = Some(level);
                     }
-                    _ => unreachable!(),
+                    _ => break,
                 },
-                Found::Nothing => {
-                    if self.0.len() > 1 {
+                Found::None => {
+                    if self.levels.len() > 1 {
                         self.pop_level();
                         self.advance();
                     } else {
@@ -291,20 +304,20 @@ where
                 }
             }
             if let Some(level) = push.take() {
-                self.0.push(level);
+                self.levels.push(level);
             }
         }
         Ok(())
     }
 
     pub fn advance(&mut self) {
-        if let Some(level) = self.0.last_mut() {
+        if let Some(level) = self.levels.last_mut() {
             level.ofs += 1;
         }
     }
 
     pub fn leaf(&self) -> Option<&C::Leaf> {
-        if let Some(last) = self.0.last() {
+        if let Some(last) = self.levels.last() {
             last.leaf()
         } else {
             None
@@ -314,7 +327,7 @@ where
     pub(crate) fn leaf_mut(&mut self) -> Option<&'a mut C::Leaf> {
         unsafe {
             let unsafe_self: &'a mut Self = mem::transmute(self);
-            if let Some(last) = unsafe_self.0.last_mut() {
+            if let Some(last) = unsafe_self.levels.last_mut() {
                 last.leaf_mut()
             } else {
                 None
@@ -323,10 +336,10 @@ where
     }
 
     fn pop_level(&mut self) -> bool {
-        if let Some(popped) = self.0.pop() {
-            if !self.0.is_empty() {
+        if let Some(popped) = self.levels.pop() {
+            if !self.levels.is_empty() {
                 if let NodeRef::Owned(o) = popped.node {
-                    let last = self.0.last_mut().expect("length < 1");
+                    let last = self.levels.last_mut().expect("length < 1");
                     last.insert_child(*o);
                 }
             }

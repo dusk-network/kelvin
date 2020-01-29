@@ -11,6 +11,7 @@ where
 {
     /// The leaf type of the compound structure
     type Leaf: Content<H>;
+
     /// The node-annotation type
     type Annotation: Content<H>
         + Combine<Self::Annotation>

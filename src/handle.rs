@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt;
 use std::io::{self, Read, Write};
 use std::mem;
 use std::ops::{Deref, DerefMut};
@@ -10,7 +11,7 @@ use cache::Cached;
 use crate::annotations::Annotation;
 use crate::compound::Compound;
 use crate::content::Content;
-use crate::debug_draw::DebugDraw;
+use crate::debug_draw::{DebugDraw, DrawState};
 use crate::sink::Sink;
 use crate::source::Source;
 use crate::store::Snapshot;
@@ -61,6 +62,21 @@ pub struct Handle<C, H>(HandleInner<C, H>)
 where
     C: Compound<H>,
     H: ByteHash;
+
+impl<C, H> fmt::Debug for Handle<C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+    C::Leaf: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.0 {
+            HandleInner::None => write!(f, "None"),
+            HandleInner::Leaf(ref l) => write!(f, "Leaf({:?})", l),
+            _ => write!(f, "Node"),
+        }
+    }
+}
 
 /// User facing reference to a handle
 pub enum HandleRef<'a, C, H>
@@ -259,10 +275,15 @@ where
 
     /// Converts handle into leaf, panics on mismatching type
     pub fn into_leaf(self) -> C::Leaf {
+        self.try_into_leaf().expect("Not a leaf")
+    }
+
+    /// Converts a leaf handle into its contained leaf, if any
+    pub fn try_into_leaf(self) -> Option<C::Leaf> {
         if let HandleInner::Leaf(l) = self.0 {
-            l
+            Some(l)
         } else {
-            panic!("Not a leaf")
+            None
         }
     }
 
@@ -276,7 +297,7 @@ where
     }
 
     /// Returns a reference to contained leaf, if any
-    pub(crate) fn leaf(&self) -> Option<&C::Leaf> {
+    pub fn leaf(&self) -> Option<&C::Leaf> {
         match self.0 {
             HandleInner::Leaf(ref leaf) => Some(leaf),
             _ => None,
@@ -284,7 +305,7 @@ where
     }
 
     /// Returns a mutable reference to contained leaf, if any
-    pub(crate) fn leaf_mut(&mut self) -> Option<&mut C::Leaf> {
+    pub fn leaf_mut(&mut self) -> Option<&mut C::Leaf> {
         match self.0 {
             HandleInner::Leaf(ref mut leaf) => Some(leaf),
             _ => None,
@@ -407,16 +428,23 @@ where
 
 impl<C, H> Handle<C, H>
 where
-    C: Compound<H>,
+    C: Compound<H> + DebugDraw<H>,
     C::Leaf: std::fmt::Debug,
     H: ByteHash,
 {
     /// Draw contents of handle, for debug use
-    pub fn draw(&self) -> String {
+    pub fn draw_conf(&self, state: &mut DrawState) -> String {
         match self.0 {
             HandleInner::None => "□ ".to_string(),
             HandleInner::Leaf(ref l) => format!("{:?} ", l),
-            HandleInner::Node(ref n, _) => n.draw(),
+            HandleInner::Node(ref n, _) => {
+                state.recursion += 1;
+                format!("\n{}{}", state.pad(), {
+                    let res = n.draw_conf(state);
+                    state.recursion -= 1;
+                    res
+                })
+            }
             _ => unimplemented!(),
         }
     }

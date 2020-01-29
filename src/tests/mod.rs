@@ -1,9 +1,12 @@
+mod fuzz;
 mod quickcheck_map;
+use crate::{ByteHash, Compound, HandleType};
+pub use fuzz::fuzz_content;
 pub use quickcheck;
 pub use rand;
 pub use tempfile;
 
-use crate::{ByteHash, Compound, HandleType};
+pub use arbitrary;
 
 /// Trait to test for correct empty state of a structure
 pub trait CorrectEmptyState<H> {

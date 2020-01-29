@@ -1,13 +1,14 @@
 use std::borrow::Borrow;
 use std::io;
 use std::iter::Iterator;
+use std::marker::PhantomData;
 use std::mem;
 
 use kelvin::{
     annotation,
     annotations::{Cardinality, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleOwned, HandleRef,
-    HandleType, Map, Method, Sink, Source,
+    HandleType, Map, Method, SearchResult, Sink, Source, KV,
 };
 use seahash::SeaHasher;
 use std::hash::{Hash, Hasher};
@@ -35,7 +36,7 @@ fn hash<T: Hash>(t: T) -> u64 {
 
 #[inline(always)]
 fn calculate_slot(mut h: u64, mut depth: usize) -> usize {
-    while depth > 15 {
+    while depth >= 16 {
         h = hash(h);
         depth -= 16;
     }
@@ -43,32 +44,43 @@ fn calculate_slot(mut h: u64, mut depth: usize) -> usize {
     (shifted & 0x0f) as usize
 }
 
-pub struct HAMTSearch {
+pub struct HAMTSearch<'a, K, V, O: ?Sized> {
     hash: u64,
+    key: &'a O,
     depth: usize,
+    _marker: PhantomData<(K, V)>,
 }
 
-impl<T> From<&T> for HAMTSearch
+impl<'a, K, V, O> From<&'a O> for HAMTSearch<'a, K, V, O>
 where
-    T: Hash + ?Sized,
+    O: Hash + ?Sized,
 {
-    fn from(t: &T) -> Self {
+    fn from(key: &'a O) -> Self {
         HAMTSearch {
-            hash: hash(t),
+            hash: hash(key),
+            key,
             depth: 0,
+            _marker: PhantomData,
         }
     }
 }
 
-impl<C, H> Method<C, H> for HAMTSearch
+impl<'a, K, V, O, H> Method<HAMT<K, V, H>, H> for HAMTSearch<'a, K, V, O>
 where
-    C: Compound<H>,
+    K: Borrow<O> + Content<H>,
+    V: Content<H>,
+    O: ?Sized + Eq,
     H: ByteHash,
 {
-    fn select(&mut self, _: &[Handle<C, H>]) -> Option<usize> {
+    fn select(&mut self, compound: &HAMT<K, V, H>, _: usize) -> SearchResult {
         let slot = calculate_slot(self.hash, self.depth);
         self.depth += 1;
-        Some(slot)
+        match compound.0[slot].leaf().map(Borrow::borrow) {
+            Some(KV { key, val: _ }) if key.borrow() == self.key => {
+                SearchResult::Leaf(slot)
+            }
+            _ => SearchResult::Path(slot),
+        }
     }
 }
 
@@ -111,8 +123,8 @@ where
 
         let action = match &mut *self.0[s].inner_mut()? {
             HandleMut::None => Action::Insert,
-            HandleMut::Leaf((ref old_k, _)) => {
-                if old_k == &k {
+            HandleMut::Leaf(KV { key, val: _ }) => {
+                if key == &k {
                     Action::Replace
                 } else {
                     Action::Split
@@ -125,25 +137,27 @@ where
 
         Ok(match action {
             Action::Insert => {
-                self.0[s] = Handle::new_leaf((k, v));
+                self.0[s] = Handle::new_leaf(KV::new(k, v));
                 None
             }
             Action::Replace => {
-                let (_, v) =
-                    mem::replace(&mut self.0[s], Handle::new_leaf((k, v)))
-                        .into_leaf();
-                Some(v)
+                let KV { key: _, val } = mem::replace(
+                    &mut self.0[s],
+                    Handle::new_leaf(KV::new(k, v)),
+                )
+                .into_leaf();
+                Some(val)
             }
             Action::Split => {
-                let (old_k, old_v) =
+                let KV { key, val } =
                     mem::replace(&mut self.0[s], Handle::new_empty())
                         .into_leaf();
 
-                let old_h = hash(&old_k);
+                let old_h = hash(&key);
 
                 let mut new_node = HAMT::new();
                 new_node.sub_insert(depth + 1, h, k, v)?;
-                new_node.sub_insert(depth + 1, old_h, old_k, old_v)?;
+                new_node.sub_insert(depth + 1, old_h, key, val)?;
                 self.0[s] = Handle::new_node(new_node);
                 None
             }
@@ -154,7 +168,7 @@ where
     pub fn remove(&mut self, k: &K) -> io::Result<Option<V>> {
         match self.sub_remove(0, hash(&k), k)? {
             Removed::None => Ok(None),
-            Removed::Leaf((_, v)) => Ok(Some(v)),
+            Removed::Leaf(KV { key: _, val }) => Ok(Some(val)),
             _ => unreachable!(),
         }
     }
@@ -164,7 +178,7 @@ where
         depth: usize,
         h: u64,
         k: &K,
-    ) -> io::Result<Removed<(K, V)>> {
+    ) -> io::Result<Removed<KV<K, V>>> {
         let removed_leaf;
         {
             let s = calculate_slot(h, depth);
@@ -174,8 +188,8 @@ where
 
             match &mut *slot.inner_mut()? {
                 HandleMut::None => return Ok(Removed::None),
-                HandleMut::Leaf((place_k, _)) => {
-                    if place_k != k {
+                HandleMut::Leaf(KV { key, val: _ }) => {
+                    if key != k {
                         return Ok(Removed::None);
                     }
                 }
@@ -213,7 +227,7 @@ where
         }
     }
 
-    fn remove_singleton(&mut self) -> io::Result<Option<(K, V)>> {
+    fn remove_singleton(&mut self) -> io::Result<Option<KV<K, V>>> {
         let mut singleton = None;
 
         for (i, child) in self.0.iter().enumerate() {
@@ -225,12 +239,7 @@ where
             }
         }
         if let Some(idx) = singleton {
-            if let HandleOwned::Leaf(l) = self.0[idx].replace(HandleOwned::None)
-            {
-                Ok(Some(l))
-            } else {
-                unreachable!()
-            }
+            Ok(Some(mem::take(&mut self.0[idx]).into_leaf()))
         } else {
             Ok(None)
         }
@@ -275,14 +284,14 @@ where
     }
 }
 
-impl<'a, O, K, V, H> Map<'a, O, K, V, H> for HAMT<K, V, H>
+impl<'a, K, O, V, H> Map<'a, K, O, V, H> for HAMT<K, V, H>
 where
-    K: Content<H> + Hash + Eq + Borrow<O>,
+    K: Content<H> + Borrow<O>,
     V: Content<H>,
     H: ByteHash,
     O: Hash + Eq + ?Sized + 'a,
 {
-    type KeySearch = HAMTSearch;
+    type KeySearch = HAMTSearch<'a, K, V, O>;
 }
 
 annotation! {
@@ -298,7 +307,7 @@ where
     K: Content<H>,
     V: Content<H>,
 {
-    type Leaf = (K, V);
+    type Leaf = KV<K, V>;
     type Annotation = Cardinality<u64>;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
@@ -327,7 +336,8 @@ mod test {
     #[test]
     fn bigger_map() {
         let mut h = HAMT::<_, _, Blake2b>::new();
-        for i in 0..1000 {
+        for i in 0..1024 {
+            assert!(h.get(&i).unwrap().is_none());
             h.insert(i, i).unwrap();
             assert_eq!(*h.get(&i).unwrap().unwrap(), i);
         }
@@ -336,17 +346,17 @@ mod test {
     #[test]
     fn nested_maps() {
         let mut map_a = HAMT::<_, _, Blake2b>::new();
-        for i in 0..100 {
+        for i in 0..128 {
             let mut map_b = HAMT::<_, _, Blake2b>::new();
 
-            for o in 0..100 {
+            for o in 0..128 {
                 map_b.insert(o, o).unwrap();
             }
 
             map_a.insert(i, map_b).unwrap();
         }
 
-        for i in 0..100 {
+        for i in 0..128 {
             let map_b = map_a.get(&i).unwrap().unwrap();
 
             for o in 0..100 {

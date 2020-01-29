@@ -6,11 +6,11 @@ use cache::Cached;
 
 use crate::compound::Compound;
 use crate::search::Method;
-use crate::unsafe_branch::UnsafeBranch;
+use crate::raw_branch::RawBranch;
 
 /// A branch into a `Compound<H>`
 /// The Branch is guaranteed to always point to a leaf
-pub struct Branch<'a, C, H>(UnsafeBranch<'a, C, H>);
+pub struct Branch<'a, C, H>(RawBranch<'a, C, H>);
 
 impl<'a, C, H> Branch<'a, C, H>
 where
@@ -25,13 +25,17 @@ where
     where
         M: Method<C, H>,
     {
-        let mut inner = UnsafeBranch::new_cached(Cached::Borrowed(node));
+        let mut inner = RawBranch::new_cached(Cached::Borrowed(node));
         inner.search(method)?;
         Ok(if inner.leaf().is_some() {
             Some(Branch(inner))
         } else {
             None
         })
+    }
+
+    pub(crate) fn exact(&self) -> bool {
+        self.0.exact()
     }
 
     /// Search for the next value in the branch, using `method`
@@ -65,7 +69,7 @@ where
 
 /// A mutable branch into a `Compound<H>`
 /// The BranchMut is guaranteed to always point to a leaf
-pub struct BranchMut<'a, C, H>(UnsafeBranch<'a, C, H>)
+pub struct BranchMut<'a, C, H>(RawBranch<'a, C, H>)
 where
     C: Compound<H>,
     H: ByteHash;
@@ -80,13 +84,17 @@ where
     where
         M: Method<C, H>,
     {
-        let mut inner = UnsafeBranch::new_mutable(node);
+        let mut inner = RawBranch::new_mutable(node);
         inner.search(method)?;
         Ok(if inner.leaf().is_some() {
             Some(BranchMut(inner))
         } else {
             None
         })
+    }
+
+    pub(crate) fn exact(&self) -> bool {
+        self.0.exact()
     }
 
     /// Search for the next value in the branch, using `method`

@@ -1,2 +1,2 @@
 [workspace]
-members = ["btree", "hamt"]
+members = ["two3", "hamt", "radix"]

@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::borrow::{Borrow, BorrowMut};
 use std::io;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
@@ -11,29 +11,65 @@ use crate::compound::Compound;
 use crate::content::Content;
 use crate::iter::{LeafIter, LeafIterMut};
 use crate::search::{First, Method};
+use crate::sink::Sink;
+use crate::source::Source;
 
-pub trait KVPair<K, V>: Into<(K, V)> + From<(K, V)> {
-    fn key(&self) -> &K;
-    fn val(&self) -> &V;
-    fn val_mut(&mut self) -> &mut V;
-    fn into_val(self) -> V;
+/// A Key-value pair type
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KV<K, V> {
+    /// the key of the pair
+    pub key: K,
+    /// the value of the pair
+    pub val: V,
 }
 
-impl<K, V> KVPair<K, V> for (K, V) {
-    fn key(&self) -> &K {
-        &self.0
+impl<K, V> KV<K, V> {
+    /// Create a new key-value pair
+    pub fn new(key: K, val: V) -> Self {
+        KV { key, val }
     }
+}
 
-    fn val(&self) -> &V {
-        &self.1
+impl<K, V> Into<(K, V)> for KV<K, V> {
+    fn into(self) -> (K, V) {
+        (self.key, self.val)
     }
+}
 
-    fn val_mut(&mut self) -> &mut V {
-        &mut self.1
+impl<K, V, H> Content<H> for KV<K, V>
+where
+    K: Content<H>,
+    V: Content<H>,
+    H: ByteHash,
+{
+    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
+        self.key.persist(sink)?;
+        self.val.persist(sink)
     }
+    /// Restore the type from a `Source`
+    fn restore(source: &mut Source<H>) -> io::Result<Self> {
+        Ok(KV {
+            key: K::restore(source)?,
+            val: V::restore(source)?,
+        })
+    }
+}
 
-    fn into_val(self) -> V {
-        self.1
+impl<K, V> Borrow<V> for KV<K, V> {
+    fn borrow(&self) -> &V {
+        &self.val
+    }
+}
+
+impl<K, V> AsRef<K> for KV<K, V> {
+    fn as_ref(&self) -> &K {
+        &self.key
+    }
+}
+
+impl<K, V> BorrowMut<V> for KV<K, V> {
+    fn borrow_mut(&mut self) -> &mut V {
+        &mut self.val
     }
 }
 
@@ -41,60 +77,34 @@ impl<K, V> KVPair<K, V> for (K, V) {
 pub struct ValPath<'a, K, V, C, H>
 where
     C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
     H: ByteHash,
 {
     branch: Branch<'a, C, H>,
     _marker: PhantomData<(K, V)>,
 }
 
-unsafe impl<'a, K, V, C, H> StableAddress for ValPath<'a, K, V, C, H>
-where
-    C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
-    H: ByteHash,
-{
-}
-
 /// A path to a mutable leaf in a map Compound
 pub struct ValPathMut<'a, K, V, C, H>
 where
     C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
     H: ByteHash,
 {
     branch: BranchMut<'a, C, H>,
     _marker: PhantomData<(K, V)>,
 }
 
-unsafe impl<'a, K, V, C, H> StableAddress for ValPathMut<'a, K, V, C, H>
-where
-    C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
-    H: ByteHash,
-{
-}
-
 impl<'a, K, V, C, H> ValPath<'a, K, V, C, H>
 where
     C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
     H: ByteHash,
-    K: Eq,
 {
     /// Creates a new `ValPath`, when leaf is found and key matches
-    pub fn new<M, O>(
-        node: &'a C,
-        method: &mut M,
-        key: &O,
-    ) -> io::Result<Option<Self>>
+    pub fn new<M>(node: &'a C, method: &mut M) -> io::Result<Option<Self>>
     where
         M: Method<C, H>,
-        K: Borrow<O>,
-        O: Eq + ?Sized,
     {
         Ok(Branch::new(node, method)?
-            .filter(|b| b.key().borrow() == key)
+            .filter(|branch| branch.exact())
             .map(|branch| ValPath {
                 branch,
                 _marker: PhantomData,
@@ -105,23 +115,15 @@ where
 impl<'a, K, V, C, H> ValPathMut<'a, K, V, C, H>
 where
     C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
     H: ByteHash,
-    K: Eq,
 {
-    /// Creates a new `ValPathMut`, when leaf is found and key matches
-    pub fn new<M, O>(
-        node: &'a mut C,
-        method: &mut M,
-        key: &O,
-    ) -> io::Result<Option<Self>>
+    /// Creates a new `ValPathMut`
+    pub fn new<M>(node: &'a mut C, method: &mut M) -> io::Result<Option<Self>>
     where
         M: Method<C, H>,
-        K: Borrow<O>,
-        O: Eq + ?Sized,
     {
         Ok(BranchMut::new(node, method)?
-            .filter(|b| b.key().borrow() == key)
+            .filter(|branch| branch.exact())
             .map(|branch| ValPathMut {
                 branch,
                 _marker: PhantomData,
@@ -132,52 +134,46 @@ where
 impl<'a, K, V, C, H> Deref for ValPath<'a, K, V, C, H>
 where
     C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
+    C::Leaf: Borrow<V>,
     H: ByteHash,
 {
     type Target = V;
 
     fn deref(&self) -> &Self::Target {
-        self.branch.val()
+        (*self.branch).borrow()
     }
 }
 
 impl<'a, K, V, C, H> Deref for ValPathMut<'a, K, V, C, H>
 where
     C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
+    C::Leaf: Borrow<V>,
     H: ByteHash,
 {
     type Target = V;
 
     fn deref(&self) -> &Self::Target {
-        self.branch.val()
+        (*self.branch).borrow()
     }
 }
 
 impl<'a, K, V, C, H> DerefMut for ValPathMut<'a, K, V, C, H>
 where
     C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
+    C::Leaf: BorrowMut<V>,
     H: ByteHash,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.branch.val_mut()
+        (*self.branch).borrow_mut()
     }
 }
 
-pub struct ValIter<'a, C, K, V, M, H>(
-    LeafIter<'a, C, M, H>,
-    PhantomData<(K, V)>,
-)
+pub struct ValIter<'a, C, V, M, H>(LeafIter<'a, C, M, H>, PhantomData<V>)
 where
     C: Compound<H>,
     H: ByteHash;
 
-pub struct ValIterMut<'a, C, K, V, M, H>(
-    LeafIterMut<'a, C, M, H>,
-    PhantomData<(K, V)>,
-)
+pub struct ValIterMut<'a, C, V, M, H>(LeafIterMut<'a, C, M, H>, PhantomData<V>)
 where
     C: Compound<H>,
     H: ByteHash;
@@ -191,77 +187,75 @@ where
     H: ByteHash;
 
 /// Compound can be iterated over like a map
-pub trait KeyValIterable<K, V, H>
+pub trait ValIterable<V, H>
 where
     Self: Compound<H>,
-    Self::Leaf: KVPair<K, V>,
     H: ByteHash,
 {
     /// Iterator over the values of the map
-    fn values(&self) -> ValIter<Self, K, V, First, H>;
+    fn values(&self) -> ValIter<Self, V, First, H>;
 
     /// Iterator over the mutable values of the map
-    fn values_mut(&mut self) -> ValIterMut<Self, K, V, First, H>;
-
-    /// Iterator over the keys of the map
-    fn keys(&mut self) -> KeyIter<Self, K, V, First, H>;
+    fn values_mut(&mut self) -> ValIterMut<Self, V, First, H>;
 }
 
-impl<C, K, V, H> KeyValIterable<K, V, H> for C
+/// Compound can have its values iterated over
+impl<C, V, H> ValIterable<V, H> for C
 where
     C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
     H: ByteHash,
 {
-    fn values(&self) -> ValIter<Self, K, V, First, H> {
+    fn values(&self) -> ValIter<Self, V, First, H> {
         ValIter(LeafIter::Initial(self, First), PhantomData)
     }
 
-    fn values_mut(&mut self) -> ValIterMut<Self, K, V, First, H> {
+    fn values_mut(&mut self) -> ValIterMut<Self, V, First, H> {
         ValIterMut(LeafIterMut::Initial(self, First), PhantomData)
-    }
-
-    fn keys(&mut self) -> KeyIter<Self, K, V, First, H> {
-        KeyIter(LeafIter::Initial(self, First), PhantomData)
     }
 }
 
-impl<'a, C, K, V, M, H> Iterator for ValIter<'a, C, K, V, M, H>
+impl<'a, C, V, M, H> Iterator for ValIter<'a, C, V, M, H>
 where
     C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
+    C::Leaf: Borrow<V>,
     M: 'a + Method<C, H>,
-    K: 'a,
     V: 'a,
     H: ByteHash,
 {
     type Item = io::Result<&'a V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|result| result.map(KVPair::val))
+        match self.0.next() {
+            Some(Ok(leaf)) => Some(Ok(leaf.borrow())),
+            Some(Err(e)) => Some(Err(e)),
+            None => None,
+        }
     }
 }
 
-impl<'a, C, K, V, M, H> Iterator for ValIterMut<'a, C, K, V, M, H>
+impl<'a, C, V, M, H> Iterator for ValIterMut<'a, C, V, M, H>
 where
     C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
+    C::Leaf: BorrowMut<V>,
     M: 'a + Method<C, H>,
-    K: 'a,
     V: 'a,
     H: ByteHash,
 {
     type Item = io::Result<&'a mut V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|r| r.map(KVPair::val_mut))
+        match self.0.next() {
+            Some(Ok(leaf)) => Some(Ok(leaf.borrow_mut())),
+            Some(Err(e)) => Some(Err(e)),
+            None => None,
+        }
     }
 }
 
 impl<'a, C, K, V, M, H> Iterator for KeyIter<'a, C, K, V, M, H>
 where
     C: Compound<H>,
-    C::Leaf: KVPair<K, V>,
+    C::Leaf: Borrow<K>,
     M: 'a + Method<C, H>,
     K: 'a,
     V: 'a,
@@ -270,7 +264,11 @@ where
     type Item = io::Result<&'a K>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|result| result.map(KVPair::key))
+        match self.0.next() {
+            Some(Ok(leaf)) => Some(Ok(leaf.borrow())),
+            Some(Err(e)) => Some(Err(e)),
+            None => None,
+        }
     }
 }
 
@@ -314,12 +312,12 @@ impl<'a, T, V> ValRefMut<'a, V> for T where
 }
 
 /// Collection can be read as a map
-pub trait Map<'a, O, K, V, H>
+pub trait Map<'a, K, O, V, H>
 where
     Self: Compound<H>,
-    Self::Leaf: KVPair<K, V>,
-    K: Content<H> + Eq + Borrow<O> + 'a,
-    O: Eq + ?Sized + 'a,
+    Self::Leaf: Borrow<V>,
+    K: Borrow<O> + 'a,
+    O: ?Sized + 'a,
     H: ByteHash,
 {
     /// The method used to search for keys in the structure
@@ -327,7 +325,7 @@ where
 
     /// Returns a reference to a value in the map, if any
     fn get(&self, k: &'a O) -> io::Result<Option<ValPath<K, V, Self, H>>> {
-        ValPath::new(self, &mut Self::KeySearch::from(k), k)
+        ValPath::new(self, &mut Self::KeySearch::from(k.borrow()))
     }
 
     /// Returns a reference to a mutable value in the map, if any
@@ -335,6 +333,6 @@ where
         &mut self,
         k: &'a O,
     ) -> io::Result<Option<ValPathMut<K, V, Self, H>>> {
-        ValPathMut::new(self, &mut Self::KeySearch::from(k.borrow()), k)
+        ValPathMut::new(self, &mut Self::KeySearch::from(k.borrow()))
     }
 }

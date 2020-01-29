@@ -89,15 +89,15 @@ impl<H: ByteHash> Store<H> {
     }
 
     /// Creates a new volatile (in-memory only) Store
-    pub fn volatile() -> io::Result<Self> {
+    pub fn volatile() -> Self {
         let pers = Volatile::new();
         let mut generations = ArrayVec::new();
         generations.push(RwLock::new(Box::new(pers) as Box<dyn Backend<H>>));
 
-        Ok(Store(Arc::new(StoreInner {
+        Store(Arc::new(StoreInner {
             generations,
             cache: Cache::new(32, 4096),
-        })))
+        }))
     }
 
     /// Persists Content to the store, returning a Snapshot

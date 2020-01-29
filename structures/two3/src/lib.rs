@@ -1,6 +1,5 @@
 use std::borrow::Borrow;
 use std::io;
-use std::iter::Iterator;
 use std::marker::PhantomData;
 use std::mem;
 
@@ -10,7 +9,7 @@ use kelvin::{
     annotation,
     annotations::{Cardinality, Counter, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
-    Sink, Source,
+    SearchResult, Sink, Source, KV,
 };
 
 const N: usize = 2;
@@ -18,20 +17,20 @@ const M: usize = 3;
 
 /// A hash array mapped trie
 #[derive(Clone)]
-pub struct BTree<K, V, H: ByteHash>(ArrayVec<[Handle<Self, H>; M]>)
+pub struct Two3Tree<K, V, H: ByteHash>(ArrayVec<[Handle<Self, H>; M]>)
 where
     Self: Compound<H>;
 
 impl<K: Content<H> + Ord, V: Content<H>, H: ByteHash> Default
-    for BTree<K, V, H>
+    for Two3Tree<K, V, H>
 {
     fn default() -> Self {
-        BTree(Default::default())
+        Two3Tree(Default::default())
     }
 }
 
 annotation! {
-    pub struct BTreeAnnotation<K, U> {
+    pub struct Two3TreeAnnotation<K, U> {
         key: MaxKey<K>,
         count: Cardinality<U>,
     }
@@ -40,43 +39,53 @@ annotation! {
         U: Counter
 }
 
-pub struct BTreeSearch<'a, K, O: ?Sized>(&'a O, PhantomData<K>);
+pub struct Two3TreeSearch<'a, K, O: ?Sized>(&'a O, PhantomData<K>);
 
-impl<'a, K, O> BTreeSearch<'a, K, O> {
+impl<'a, K, O> Two3TreeSearch<'a, K, O> {
     fn new(key: &'a O) -> Self {
-        BTreeSearch(key, PhantomData)
+        Two3TreeSearch(key, PhantomData)
     }
 }
 
-impl<'a, K, O: ?Sized> From<&'a O> for BTreeSearch<'a, K, O> {
+impl<'a, K, O: ?Sized> From<&'a O> for Two3TreeSearch<'a, K, O> {
     fn from(k: &'a O) -> Self {
-        BTreeSearch(k, PhantomData)
+        Two3TreeSearch(k, PhantomData)
     }
 }
 
-impl<'a, K, O, C, H> Method<C, H> for BTreeSearch<'a, K, O>
+impl<'a, K, V, O, H> Method<Two3Tree<K, V, H>, H> for Two3TreeSearch<'a, K, O>
 where
-    C: Compound<H>,
-    C::Annotation: Borrow<MaxKey<K>>,
-    H: ByteHash,
-    K: Ord + Borrow<O>,
+    K: Ord + Borrow<O> + Content<H>,
+    V: Content<H>,
     O: Ord + ?Sized,
+    H: ByteHash,
 {
-    fn select(&mut self, handles: &[Handle<C, H>]) -> Option<usize> {
-        for (i, h) in handles.iter().enumerate() {
+    fn select(
+        &mut self,
+        compound: &Two3Tree<K, V, H>,
+        _: usize,
+    ) -> SearchResult {
+        for (i, h) in compound.0.iter().enumerate() {
             if let Some(ann) = h.annotation() {
                 let handle_key: &MaxKey<K> = (*ann).borrow();
-                if self.0 <= (**handle_key).borrow() {
-                    return Some(i);
+                if self.0 == (**handle_key).borrow() {
+                    // correct key
+                    if h.handle_type() == HandleType::Leaf {
+                        return SearchResult::Leaf(i);
+                    } else {
+                        return SearchResult::Path(i);
+                    }
+                } else if self.0 < (**handle_key).borrow() {
+                    return SearchResult::Path(i);
                 }
             }
         }
+        let len = compound.0.len();
         // Always select last element if node
-        let len = handles.len();
-        if len > 0 && handles[len - 1].handle_type() == HandleType::Node {
-            Some(len - 1)
+        if len > 0 && compound.0[len - 1].handle_type() == HandleType::Node {
+            SearchResult::Path(len - 1)
         } else {
-            None
+            SearchResult::None
         }
     }
 }
@@ -101,22 +110,22 @@ where
     Merge(C::Leaf),
 }
 
-impl<K, V, H> BTree<K, V, H>
+impl<K, V, H> Two3Tree<K, V, H>
 where
     K: Content<H> + Ord,
     V: Content<H>,
     H: ByteHash,
 {
-    /// Creates a new BTree
+    /// Creates a new Two3Tree
     pub fn new() -> Self {
-        BTree(Default::default())
+        Two3Tree(Default::default())
     }
 
-    /// Insert key-value pair into the BTree, optionally returning expelled value
+    /// Insert key-value pair into the Two3Tree, optionally returning expelled value
     pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
-        match self._insert(Handle::new_leaf((k, v)), 0)? {
+        match self._insert(Handle::new_leaf(KV::new(k, v)), 0)? {
             InsertResult::Ok => Ok(None),
-            InsertResult::Replaced((_, v)) => Ok(Some(v)),
+            InsertResult::Replaced(KV { key: _, val }) => Ok(Some(val)),
             InsertResult::Split(_) => unreachable!(),
         }
     }
@@ -142,13 +151,14 @@ where
         let ann_key: &K = &**borrow;
         let len = self.0.len();
 
-        match BTreeSearch::new(ann_key).select(self.children()) {
-            Some(i) => match &mut *self.0[i].inner_mut()? {
+        match Two3TreeSearch::new(ann_key).select(self, 0) {
+            SearchResult::Leaf(i) => {
+                action = Action::Replace(i);
+            }
+            SearchResult::Path(i) => match &mut *self.0[i].inner_mut()? {
                 HandleMut::None => unreachable!(),
-                HandleMut::Leaf((key, _)) => {
-                    if key == ann_key {
-                        action = Action::Replace(i);
-                    } else if *key > *ann_key {
+                HandleMut::Leaf(KV { key, val: _ }) => {
+                    if *key > *ann_key {
                         action = Action::Insert(i);
                     } else if i + 1 == len {
                         action = Action::Insert(i + 1);
@@ -175,7 +185,7 @@ where
                     }
                 }
             },
-            None => action = Action::Insert(len),
+            SearchResult::None => action = Action::Insert(len),
         }
 
         loop {
@@ -256,7 +266,7 @@ where
     /// Remove element with given key, returning it.
     pub fn remove(&mut self, k: &K) -> io::Result<Option<V>> {
         match self._remove(k, 0)? {
-            RemoveResult::Removed((_, v)) => Ok(Some(v)),
+            RemoveResult::Removed(KV { key: _, val }) => Ok(Some(val)),
             RemoveResult::Noop => Ok(None),
             _ => unreachable!(),
         }
@@ -275,15 +285,14 @@ where
         // The default action
         let mut action = Action::Noop;
 
-        match BTreeSearch::new(k).select(self.children()) {
-            Some(i) => {
+        match Two3TreeSearch::new(k).select(self, 0) {
+            SearchResult::Leaf(i) => {
+                action = Action::Remove(i);
+            }
+            SearchResult::Path(i) => {
                 match &mut *self.0[i].inner_mut()? {
                     HandleMut::None => unreachable!(),
-                    HandleMut::Leaf((key, _)) => {
-                        if key == k {
-                            action = Action::Remove(i);
-                        }
-                    }
+                    HandleMut::Leaf(_) => (),
                     HandleMut::Node(n) => {
                         let ann =
                             n.annotation().expect("node without annotation");
@@ -304,7 +313,7 @@ where
                     }
                 }
             }
-            None => return Ok(RemoveResult::Noop),
+            SearchResult::None => return Ok(RemoveResult::Noop),
         }
 
         match action {
@@ -407,7 +416,7 @@ where
     }
 }
 
-impl<K, V, H> Content<H> for BTree<K, V, H>
+impl<K, V, H> Content<H> for Two3Tree<K, V, H>
 where
     K: Content<H> + Ord,
     V: Content<H>,
@@ -422,7 +431,7 @@ where
     }
 
     fn restore(source: &mut Source<H>) -> io::Result<Self> {
-        let mut b = BTree::default();
+        let mut b = Two3Tree::default();
         let len = u8::restore(source)?;
         for _ in 0..len {
             b.0.push(Handle::restore(source)?);
@@ -431,14 +440,15 @@ where
     }
 }
 
-impl<K, V, H> Compound<H> for BTree<K, V, H>
+impl<K, V, H> Compound<H> for Two3Tree<K, V, H>
 where
     H: ByteHash,
     K: Content<H> + Ord,
     V: Content<H>,
 {
-    type Leaf = (K, V);
-    type Annotation = BTreeAnnotation<K, u64>;
+    type Leaf = KV<K, V>;
+
+    type Annotation = Two3TreeAnnotation<K, u64>;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
         &mut self.0
@@ -449,14 +459,14 @@ where
     }
 }
 
-impl<'a, O, K, V, H> Map<'a, O, K, V, H> for BTree<K, V, H>
+impl<'a, K, O, V, H> Map<'a, K, O, V, H> for Two3Tree<K, V, H>
 where
     K: Content<H> + Ord + Borrow<O>,
     V: Content<H>,
     H: ByteHash,
     O: Ord + ?Sized + 'a,
 {
-    type KeySearch = BTreeSearch<'a, K, O>;
+    type KeySearch = Two3TreeSearch<'a, K, O>;
 }
 
 #[cfg(test)]
@@ -468,14 +478,14 @@ mod test {
 
     #[test]
     fn trivial_map() {
-        let mut h = BTree::<_, _, Blake2b>::new();
+        let mut h = Two3Tree::<_, _, Blake2b>::new();
         h.insert(28, 28).unwrap();
         assert_eq!(*h.get(&28).unwrap().unwrap(), 28);
     }
 
     #[test]
     fn bigger_map() {
-        let mut h = BTree::<_, _, Blake2b>::new();
+        let mut h = Two3Tree::<_, _, Blake2b>::new();
         let bigger = 1024;
         for i in 0..bigger {
             h.insert(i, i).unwrap();
@@ -487,7 +497,7 @@ mod test {
 
     #[test]
     fn bigger_map_reverse() {
-        let mut h = BTree::<_, _, Blake2b>::new();
+        let mut h = Two3Tree::<_, _, Blake2b>::new();
         let bigger = 1024;
         for i in 0..bigger {
             let i = bigger - i - 1;
@@ -500,7 +510,7 @@ mod test {
 
     #[test]
     fn insert_remove() {
-        let mut h = BTree::<_, _, Blake2b>::new();
+        let mut h = Two3Tree::<_, _, Blake2b>::new();
         let bigger = 1024;
         for i in 0..bigger {
             let i = bigger - i - 1;
@@ -513,8 +523,8 @@ mod test {
 
     #[test]
     fn insert_remove_reverse() {
-        let mut h = BTree::<_, _, Blake2b>::new();
-        let bigger = 1024;
+        let mut h = Two3Tree::<_, _, Blake2b>::new();
+        let bigger = 4;
         for i in 0..bigger {
             h.insert(i, i).unwrap();
         }
@@ -525,17 +535,30 @@ mod test {
     }
 
     #[test]
+    fn insert_get_reverse() {
+        let mut h = Two3Tree::<_, _, Blake2b>::new();
+        let bigger = 4;
+        for i in 0..bigger {
+            h.insert(i, i).unwrap();
+        }
+        for i in 0..bigger {
+            let i = bigger - i - 1;
+            assert_eq!(*h.get(&i).unwrap().unwrap(), i);
+        }
+    }
+
+    #[test]
     fn borrowed_keys() {
-        let mut map = BTree::<String, u8, Blake2b>::new();
+        let mut map = Two3Tree::<String, u8, Blake2b>::new();
         map.insert("hello".into(), 8).unwrap();
         assert_eq!(*map.get("hello").unwrap().unwrap(), 8);
     }
 
     #[test]
     fn nested_maps() {
-        let mut map_a = BTree::<_, _, Blake2b>::new();
+        let mut map_a = Two3Tree::<_, _, Blake2b>::new();
         for i in 0..100 {
-            let mut map_b = BTree::<_, _, Blake2b>::new();
+            let mut map_b = Two3Tree::<_, _, Blake2b>::new();
 
             for o in 0..100 {
                 map_b.insert(o, o).unwrap();
@@ -553,5 +576,5 @@ mod test {
         }
     }
 
-    quickcheck_map!(|| BTree::new());
+    quickcheck_map!(|| Two3Tree::new());
 }
