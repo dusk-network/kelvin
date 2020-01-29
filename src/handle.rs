@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt;
 use std::io::{self, Read, Write};
 use std::mem;
 use std::ops::{Deref, DerefMut};
@@ -61,6 +62,21 @@ pub struct Handle<C, H>(HandleInner<C, H>)
 where
     C: Compound<H>,
     H: ByteHash;
+
+impl<C, H> fmt::Debug for Handle<C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+    C::Leaf: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.0 {
+            HandleInner::None => write!(f, "None"),
+            HandleInner::Leaf(ref l) => write!(f, "Leaf({:?})", l),
+            _ => write!(f, "Node"),
+        }
+    }
+}
 
 /// User facing reference to a handle
 pub enum HandleRef<'a, C, H>
@@ -412,7 +428,7 @@ where
 
 impl<C, H> Handle<C, H>
 where
-    C: Compound<H>,
+    C: Compound<H> + DebugDraw<H>,
     C::Leaf: std::fmt::Debug,
     H: ByteHash,
 {

@@ -1,12 +1,12 @@
 [package]
-name = "kelvin-btree"
+name = "kelvin-two3"
 version = "0.2.0"
 authors = ["Kristoffer Ström <kristoffer@dusk.network>"]
 edition = "2018"
 repository = "https://github.com/dusk-network/kelvin"
 keywords = ["datastructure", "kelvin"]
 license = "MPL-2.0"
-description = "BTree Data structure"
+description = "2-3 Tree Data structure"
 
 [dependencies]
 kelvin = { path = "../..", version = "0.5"  }

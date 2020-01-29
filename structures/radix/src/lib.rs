@@ -57,6 +57,11 @@ where
     H: ByteHash,
 {
     fn select(&mut self, compound: &Radix<K, V, H>, _: usize) -> SearchResult {
+        // Found an inner leaf
+        if self.len() == 0 {
+            return SearchResult::Leaf(0);
+        }
+
         let nibble = self.pop_nibble();
 
         let i = nibble + 1;
@@ -67,7 +72,9 @@ where
         let search_len = self.len();
 
         let result = {
-            if common_len == search_len {
+            if common_len == search_len
+                && compound.handles[i].handle_type() == HandleType::Leaf
+            {
                 SearchResult::Leaf(i)
             } else if common_len <= search_len {
                 // if we're descending, we'll trim the search
@@ -138,7 +145,7 @@ where
             self.prefixes[i - 1] = (*search).into();
             self.handles[i] = leaf;
             return Ok(None);
-        } else if common.len() == search.len() {
+        } else if common.len() == search.len() && common.len() == path_len {
             // found the leaf
             let leaf = Handle::new_leaf(v);
             return Ok(Some(
@@ -153,8 +160,9 @@ where
             let old_handle = mem::take(&mut self.handles[i]);
 
             // The path to re-insert the removed handle
-            let o = old_path.pop_nibble() + 1;
             old_path.trim_front(common.len());
+            let o = old_path.pop_nibble() + 1;
+
             new_node.handles[o] = old_handle;
             new_node.prefixes[o - 1] = old_path;
 
@@ -222,7 +230,7 @@ where
 
             if self.handles[i].handle_type() == HandleType::None {
                 return Ok(Removed::None);
-            } else if common.len() == search.len() {
+            } else if common.len() == search.len() && common.len() == path_len {
                 // found the leaf
                 self.prefixes[i - 1] = Default::default();
                 let removed = mem::take(&mut self.handles[i]).into_leaf();
@@ -372,9 +380,12 @@ mod test {
     use super::*;
 
     use std::collections::hash_map::DefaultHasher;
+    use std::fmt;
     use std::hash::{Hash, Hasher};
 
-    use kelvin::{quickcheck_map, tests::CorrectEmptyState, Blake2b};
+    use kelvin::{
+        quickcheck_map, tests::CorrectEmptyState, Blake2b, DebugDraw, DrawState,
+    };
 
     #[test]
     fn trivial_map() {
@@ -430,7 +441,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn different_length_keys() {
         let keys = [
             "cat",
@@ -479,6 +489,35 @@ mod test {
         assert_eq!(h.remove(&vec![0x00, 0x10]).unwrap(), Some(0));
 
         h.assert_correct_empty_state();
+    }
+
+    impl<K, V, H> DebugDraw<H> for Radix<K, V, H>
+    where
+        V: fmt::Debug + Content<H>,
+        K: 'static,
+        H: ByteHash,
+    {
+        fn draw_conf(&self, state: &mut DrawState) -> String {
+            let mut s = String::new();
+
+            s.push_str(&format!("({:?}, ", self.handles[0]));
+
+            for i in 1..N_BUCKETS {
+                match self.handles[i].handle_type() {
+                    HandleType::Leaf | HandleType::Node => {
+                        s.push_str(&format!(
+                            "[{:x} {:?}] => ",
+                            i - 1,
+                            self.prefixes[i - 1]
+                        ));
+                        s.push_str(&self.handles[i].draw_conf(state));
+                    }
+                    _ => (),
+                }
+            }
+            s.push_str(")");
+            s
+        }
     }
 
     quickcheck_map!(|| Radix::new());

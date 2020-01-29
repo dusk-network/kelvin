@@ -29,7 +29,7 @@ pub use crate::backend::Backend;
 pub use crate::branch::{Branch, BranchMut};
 pub use crate::compound::Compound;
 pub use crate::content::Content;
-pub use crate::debug_draw::DebugDraw;
+pub use crate::debug_draw::{DebugDraw, DrawState};
 pub use crate::handle::{
     Handle, HandleMut, HandleOwned, HandleRef, HandleType,
 };

@@ -161,6 +161,20 @@ impl PartialEq for NibbleBuf {
     }
 }
 
+impl<'a> PartialEq for Nibbles<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+        for i in 0..self.len() {
+            if self.get(i) != other.get(i) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 impl NibbleBuf {
     pub fn new(bytes: &[u8]) -> Self {
         let mut vec: Vec<u8> = Vec::with_capacity(bytes.len());
