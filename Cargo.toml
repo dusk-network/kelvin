@@ -33,40 +33,9 @@ version = "1.2.2"
 
 [dev-dependencies]
 tempfile = "3.0"
-criterion = "0.2"
 
 [features]
 default = ["filesystem"]
 
 filesystem = ["appendix"]
 web = ["web-sys", "wasm-bindgen" ]
-
-[[bench]]
-name = "insert_hamt"
-path = "benches/insert_hamt.rs"
-harness = false
-
-[[bench]]
-name = "insert_btree"
-path = "benches/insert_btree.rs"
-harness = false
-
-[[bench]]
-name = "iter_hamt"
-path = "benches/iter_hamt.rs"
-harness = false
-
-[[bench]]
-name = "iter_btree"
-path = "benches/iter_btree.rs"
-harness = false
-
-[[bench]]
-name = "get_hamt"
-path = "benches/get_hamt.rs"
-harness = false
-
-[[bench]]
-name = "get_btree"
-path = "benches/get_btree.rs"
-harness = false
