@@ -6,11 +6,11 @@ license = "MPL-2.0"
 name = "kelvin-radix"
 repository = "https://github.com/dusk-network/kelvin"
 tags = ["datastructure", "kelvin"]
-version = "0.1.0"
+version = "0.2.0"
 
 [dependencies]
 smallvec = "1.1"
 
 [dependencies.kelvin]
 path = "../.."
-version = "0.5"
+version = "0.6"
