@@ -1,6 +1,6 @@
 [package]
 name = "kelvin-two3"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Kristoffer Ström <kristoffer@dusk.network>"]
 edition = "2018"
 repository = "https://github.com/dusk-network/kelvin"
