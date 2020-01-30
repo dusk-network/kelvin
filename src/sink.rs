@@ -1,4 +1,5 @@
-use std::io::{self, Write};
+use std::hash::Hasher;
+use std::io;
 
 use bytehash::{ByteHash, State};
 
@@ -32,9 +33,7 @@ impl<'a, H: ByteHash> Sink<'a, H> {
     pub(crate) fn fin(self) -> io::Result<H::Digest> {
         let Sink { bytes, .. } = self;
         let mut hasher = H::state();
-        hasher
-            .write_all(&bytes)
-            .expect("In memory write should always succeed");
+        hasher.write(&bytes);
         let hash = hasher.fin();
         self.store.put(hash, bytes)?;
         Ok(hash)

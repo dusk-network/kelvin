@@ -9,7 +9,7 @@ use bytehash::ByteHash;
 use cache::Cache;
 use parking_lot::RwLock;
 
-use crate::backend::{Backend, Persistant, PutResult, Volatile};
+use crate::backend::{Backend, Ephemeral, Persistant, PutResult};
 use crate::content::Content;
 use crate::sink::Sink;
 use crate::source::Source;
@@ -88,9 +88,9 @@ impl<H: ByteHash> Store<H> {
         })))
     }
 
-    /// Creates a new volatile (in-memory only) Store
-    pub fn volatile() -> Self {
-        let pers = Volatile::new();
+    /// Creates a new ephemeral (in-memory only) Store
+    pub fn ephemeral() -> Self {
+        let pers = Ephemeral::new();
         let mut generations = ArrayVec::new();
         generations.push(RwLock::new(Box::new(pers) as Box<dyn Backend<H>>));
 
