@@ -54,7 +54,7 @@ macro_rules! quickcheck_map {
         }
 
         fn run_ops(ops: Vec<Op>) -> bool {
-            let store = Store::<Blake2b>::volatile();
+            let store = Store::<Blake2b>::ephemeral();
 
             let mut test = $new_map();
             let mut model = HashMap::new();

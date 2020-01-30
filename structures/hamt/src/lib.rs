@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::hash::Hash;
 use std::io;
 use std::iter::Iterator;
 use std::marker::PhantomData;
@@ -10,8 +11,6 @@ use kelvin::{
     ByteHash, Compound, Content, Handle, HandleMut, HandleOwned, HandleRef,
     HandleType, Map, Method, SearchResult, Sink, Source, KV,
 };
-use seahash::SeaHasher;
-use std::hash::{Hash, Hasher};
 
 const N_BUCKETS: usize = 16;
 
@@ -27,37 +26,35 @@ impl<K: Content<H>, V: Content<H>, H: ByteHash> Default for HAMT<K, V, H> {
     }
 }
 
-#[inline(always)]
-fn hash<T: Hash>(t: T) -> u64 {
-    let mut hasher = SeaHasher::new();
-    t.hash(&mut hasher);
-    hasher.finish()
+fn select_slot(hash: &[u8], depth: usize) -> usize {
+    let ofs = depth / 2;
+    (if ofs % 2 == 0 {
+        (hash[ofs] & 0xF0) >> 4
+    } else {
+        hash[ofs] & 0x0F
+    }) as usize
 }
 
-#[inline(always)]
-fn calculate_slot(mut h: u64, mut depth: usize) -> usize {
-    while depth >= 16 {
-        h = hash(h);
-        depth -= 16;
-    }
-    let shifted = h >> (depth * 4);
-    (shifted & 0x0f) as usize
-}
-
-pub struct HAMTSearch<'a, K, V, O: ?Sized> {
-    hash: u64,
+pub struct HAMTSearch<'a, K, V, O, H>
+where
+    O: ?Sized,
+    H: ByteHash,
+{
+    hash: H::Digest,
     key: &'a O,
     depth: usize,
     _marker: PhantomData<(K, V)>,
 }
 
-impl<'a, K, V, O> From<&'a O> for HAMTSearch<'a, K, V, O>
+impl<'a, K, V, O, H> From<&'a O> for HAMTSearch<'a, K, V, O, H>
 where
-    O: Hash + ?Sized,
+    O: ?Sized + Hash,
+    H: ByteHash,
 {
     fn from(key: &'a O) -> Self {
+        let hash = H::hash(&key);
         HAMTSearch {
-            hash: hash(key),
+            hash,
             key,
             depth: 0,
             _marker: PhantomData,
@@ -65,7 +62,7 @@ where
     }
 }
 
-impl<'a, K, V, O, H> Method<HAMT<K, V, H>, H> for HAMTSearch<'a, K, V, O>
+impl<'a, K, V, O, H> Method<HAMT<K, V, H>, H> for HAMTSearch<'a, K, V, O, H>
 where
     K: Borrow<O> + Content<H>,
     V: Content<H>,
@@ -73,7 +70,7 @@ where
     H: ByteHash,
 {
     fn select(&mut self, compound: &HAMT<K, V, H>, _: usize) -> SearchResult {
-        let slot = calculate_slot(self.hash, self.depth);
+        let slot = select_slot(self.hash.as_ref(), self.depth);
         self.depth += 1;
         match compound.0[slot].leaf().map(Borrow::borrow) {
             Some(KV { key, val: _ }) if key.borrow() == self.key => {
@@ -92,7 +89,7 @@ enum Removed<L> {
 
 impl<K, V, H> HAMT<K, V, H>
 where
-    K: Content<H> + Hash + Eq,
+    K: Content<H> + Eq + Hash,
     V: Content<H>,
     H: ByteHash,
 {
@@ -103,17 +100,17 @@ where
 
     /// Insert key-value pair into the HAMT, optionally returning expelled value
     pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
-        self.sub_insert(0, hash(&k), k, v)
+        self.sub_insert(0, H::hash(&k), k, v)
     }
 
     fn sub_insert(
         &mut self,
         depth: usize,
-        h: u64,
+        h: H::Digest,
         k: K,
         v: V,
     ) -> io::Result<Option<V>> {
-        let s = calculate_slot(h, depth);
+        let s = select_slot(h.as_ref(), depth);
 
         enum Action {
             Split,
@@ -153,7 +150,7 @@ where
                     mem::replace(&mut self.0[s], Handle::new_empty())
                         .into_leaf();
 
-                let old_h = hash(&key);
+                let old_h = H::hash(&key);
 
                 let mut new_node = HAMT::new();
                 new_node.sub_insert(depth + 1, h, k, v)?;
@@ -166,7 +163,7 @@ where
 
     /// Remove element with given key, returning it.
     pub fn remove(&mut self, k: &K) -> io::Result<Option<V>> {
-        match self.sub_remove(0, hash(&k), k)? {
+        match self.sub_remove(0, H::hash(k), k)? {
             Removed::None => Ok(None),
             Removed::Leaf(KV { key: _, val }) => Ok(Some(val)),
             _ => unreachable!(),
@@ -176,12 +173,12 @@ where
     fn sub_remove(
         &mut self,
         depth: usize,
-        h: u64,
+        h: H::Digest,
         k: &K,
     ) -> io::Result<Removed<KV<K, V>>> {
         let removed_leaf;
         {
-            let s = calculate_slot(h, depth);
+            let s = select_slot(h.as_ref(), depth);
             let slot = &mut self.0[s];
 
             let mut collapse = None;
@@ -289,9 +286,9 @@ where
     K: Content<H> + Borrow<O>,
     V: Content<H>,
     H: ByteHash,
-    O: Hash + Eq + ?Sized + 'a,
+    O: Eq + ?Sized + 'a + Hash,
 {
-    type KeySearch = HAMTSearch<'a, K, V, O>;
+    type KeySearch = HAMTSearch<'a, K, V, O, H>;
 }
 
 annotation! {

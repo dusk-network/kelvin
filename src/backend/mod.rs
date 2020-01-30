@@ -15,7 +15,7 @@ pub use self::localstorage::WebBackend as Persistant;
 #[cfg(feature = "filesystem")]
 pub use disk::DiskBackend as Persistant;
 
-pub use self::mem::MemBackend as Volatile;
+pub use self::mem::MemBackend as Ephemeral;
 
 pub enum PutResult {
     Ok,
