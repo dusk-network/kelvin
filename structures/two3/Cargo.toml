@@ -9,5 +9,5 @@ license = "MPL-2.0"
 description = "2-3 Tree Data structure"
 
 [dependencies]
-kelvin = { path = "../..", version = "0.6"  }
+kelvin = { path = "../..", version = "0.7"  }
 arrayvec = "0.5"
