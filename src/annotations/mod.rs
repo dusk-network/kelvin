@@ -14,8 +14,23 @@ mod cardinality;
 
 mod max_key;
 
+/// Helper group-trait for annotations
+pub trait Annotation<L, H>:
+    'static + Combine<Self> + for<'l> From<&'l L> + Content<H>
+where
+    H: ByteHash,
+{
+}
+
+impl<A, L, H> Annotation<L, H> for A
+where
+    A: 'static + Combine<Self> + for<'any> From<&'any L> + Content<H>,
+    H: ByteHash,
+{
+}
+
 /// Wrapper trait for hiding generics when working on select functions
-pub trait Annotation<A: Clone> {
+pub trait ErasedAnnotation<A: Clone>: Clone {
     /// Returns the annotation of &self, if any.
     fn annotation(&self) -> Option<Cow<A>>;
 }
@@ -32,7 +47,7 @@ pub trait Combine<A>: Sized + Clone {
     fn combine<E>(elements: &[E]) -> Option<Self>
     where
         A: Borrow<Self> + Clone,
-        E: Annotation<A>;
+        E: ErasedAnnotation<A>;
 }
 
 impl<A, T> Combine<A> for T
@@ -42,12 +57,11 @@ where
     fn combine<E>(elements: &[E]) -> Option<T>
     where
         A: Borrow<Self> + Clone,
-        E: Annotation<A>,
+        E: ErasedAnnotation<A>,
     {
-        let mut iter = elements.iter().filter_map(Annotation::annotation);
+        let mut iter = elements.iter().filter_map(ErasedAnnotation::annotation);
 
         iter.next().map(|first| {
-            //let a: &A = first.borrow();
             let t: &T = (*first).borrow().borrow();
             let mut s: T = t.clone();
             for next in iter {

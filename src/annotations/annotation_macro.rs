@@ -11,7 +11,7 @@ macro_rules! annotation {
     } => {
 
         use std::borrow::Borrow as __Borrow;
-        use $crate::annotations::Annotation as __Annotation;
+        use $crate::annotations::ErasedAnnotation as __ErasedAnnotation;
         use $crate::annotations::Combine as __Combine;
 
         $pub struct $struct_name $( < $( $param ),* > )* {
@@ -72,7 +72,7 @@ macro_rules! annotation {
         {
             fn combine<__E>(elements: &[__E] ) -> Option<Self>     where
                 __A: __Borrow<Self> + Clone,
-                __E: __Annotation<__A> {
+                __E: __ErasedAnnotation<__A> {
                 Some($struct_name {
                     $(
                         $ann_key : if let Some(combined) = < $ann_type >::combine(elements) {

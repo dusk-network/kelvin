@@ -8,7 +8,7 @@ use std::sync::Arc;
 use bytehash::ByteHash;
 use cache::Cached;
 
-use crate::annotations::Annotation;
+use crate::annotations::ErasedAnnotation;
 use crate::compound::Compound;
 use crate::content::Content;
 use crate::debug_draw::{DebugDraw, DrawState};
@@ -416,7 +416,7 @@ where
     }
 }
 
-impl<C, H> Annotation<C::Annotation> for Handle<C, H>
+impl<C, H> ErasedAnnotation<C::Annotation> for Handle<C, H>
 where
     C: Compound<H>,
     H: ByteHash,
