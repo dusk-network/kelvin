@@ -382,5 +382,5 @@ mod test {
         }
     }
 
-    quickcheck_map!(|| CountingHAMT::new());
+    quickcheck_map!(|| CountingHAMTMap::new());
 }

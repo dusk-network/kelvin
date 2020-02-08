@@ -15,12 +15,13 @@ use kelvin::{
     SearchResult, Sink, Source, KV,
 };
 
+/// The default 2-3 tree
 pub type DefaultTwo3Map<K, V, H> = Two3Tree<K, V, MaxKey<K>, H>;
 
 const N: usize = 2;
 const M: usize = 3;
 
-/// A Two-Three tree implemented on kelvin
+/// A 2-3 tree
 #[derive(Clone)]
 pub struct Two3Tree<K, V, A, H: ByteHash>(ArrayVec<[Handle<Self, H>; M]>)
 where
@@ -39,7 +40,7 @@ where
 }
 
 annotation! {
-    pub struct Two3TreeAnnotation<K, U> {
+    struct Two3TreeAnnotation<K, U> {
         key: MaxKey<K>,
         count: Cardinality<U>,
     }
@@ -48,6 +49,7 @@ annotation! {
         U: Counter
 }
 
+/// Struct used to search the 2-3 Tree
 pub struct Two3TreeSearch<'a, K, O: ?Sized>(&'a O, PhantomData<K>);
 
 impl<'a, K, O> Two3TreeSearch<'a, K, O> {
