@@ -6,5 +6,5 @@ edition = "2018"
 
 [dependencies]
 kelvin = { path = "../.." }
-kelvin-btree = { path = "../../structures/btree" }
+kelvin-two3 = { path = "../../structures/two3" }
 kelvin-hamt = { path = "../../structures/hamt" }

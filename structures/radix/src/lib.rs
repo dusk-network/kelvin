@@ -1,3 +1,6 @@
+//! A Radix trie implemented on kelvin
+#![warn(missing_docs)]
+
 use std::borrow::Borrow;
 use std::io::{self};
 use std::mem;
@@ -7,8 +10,7 @@ mod nibbles;
 use nibbles::{AsNibbles, NibbleBuf, Nibbles};
 
 use kelvin::{
-    annotation,
-    annotations::{Cardinality, MaxKey, MaxKeyType},
+    annotations::{Annotation, VoidAnnotation},
     ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
     SearchResult, Sink, Source,
 };
@@ -17,8 +19,11 @@ const N_BUCKETS: usize = 17;
 
 const MAX_KEY_LEN: usize = core::u16::MAX as usize / 2;
 
+/// Default unannotated Radix trie
+pub type DefaultRadixMap<K, V, H> = Radix<K, V, VoidAnnotation, H>;
+
 /// A Prefix tree
-pub struct Radix<K, V, H>
+pub struct Radix<K, V, A, H>
 where
     Self: Compound<H>,
     H: ByteHash,
@@ -27,7 +32,13 @@ where
     prefixes: [NibbleBuf; N_BUCKETS - 1],
 }
 
-impl<K: 'static, V: Content<H>, H: ByteHash> Clone for Radix<K, V, H> {
+impl<K, V, A, H> Clone for Radix<K, V, A, H>
+where
+    K: 'static,
+    V: Content<H>,
+    A: Annotation<V, H>,
+    H: ByteHash,
+{
     fn clone(&self) -> Self {
         Radix {
             handles: self.handles.clone(),
@@ -36,10 +47,11 @@ impl<K: 'static, V: Content<H>, H: ByteHash> Clone for Radix<K, V, H> {
     }
 }
 
-impl<K, V, H> Default for Radix<K, V, H>
+impl<K, V, A, H> Default for Radix<K, V, A, H>
 where
     K: 'static,
     V: Content<H>,
+    A: Annotation<V, H>,
     H: ByteHash,
 {
     fn default() -> Self {
@@ -50,13 +62,18 @@ where
     }
 }
 
-impl<K, V, H> Method<Radix<K, V, H>, H> for Nibbles<'_>
+impl<K, V, A, H> Method<Radix<K, V, A, H>, H> for Nibbles<'_>
 where
     K: 'static,
     V: Content<H>,
+    A: Annotation<V, H>,
     H: ByteHash,
 {
-    fn select(&mut self, compound: &Radix<K, V, H>, _: usize) -> SearchResult {
+    fn select(
+        &mut self,
+        compound: &Radix<K, V, A, H>,
+        _: usize,
+    ) -> SearchResult {
         // Found an inner leaf
         if self.len() == 0 {
             return SearchResult::Leaf(0);
@@ -96,10 +113,11 @@ enum Removed<L> {
     Collapse(L, L, NibbleBuf, usize),
 }
 
-impl<K, V, H> Radix<K, V, H>
+impl<K, V, A, H> Radix<K, V, A, H>
 where
     K: AsRef<[u8]> + Eq + 'static,
     V: Content<H>,
+    A: Annotation<V, H>,
     H: ByteHash,
 {
     /// Creates a new Radix
@@ -107,13 +125,13 @@ where
         Default::default()
     }
 
+    /// Insert key-value pair into the Radix, optionally returning expelled value
     pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
         debug_assert!(k.as_ref().len() <= MAX_KEY_LEN);
         let mut search = Nibbles::new(k.as_ref());
         self._insert(&mut search, v)
     }
 
-    /// Insert key-value pair into the Radix, optionally returning expelled value
     fn _insert(&mut self, search: &mut Nibbles, v: V) -> io::Result<Option<V>> {
         // Leaf case, for keys that are subsets of other keys
         if search.len() == 0 {
@@ -309,10 +327,11 @@ where
     }
 }
 
-impl<K, V, H> Content<H> for Radix<K, V, H>
+impl<K, V, A, H> Content<H> for Radix<K, V, A, H>
 where
     K: 'static,
     V: Content<H>,
+    A: Annotation<V, H>,
     H: ByteHash,
 {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
@@ -340,31 +359,26 @@ where
     }
 }
 
-impl<'a, K, O, V, H> Map<'a, K, O, V, H> for Radix<K, V, H>
+impl<'a, K, V, A, O, H> Map<'a, K, O, V, H> for Radix<K, V, A, H>
 where
     K: AsRef<[u8]> + Eq + Borrow<O> + 'static,
     V: Content<H>,
-    H: ByteHash,
+    A: Annotation<V, H>,
     O: Eq + AsRef<[u8]> + 'a + ?Sized,
+    H: ByteHash,
 {
     type KeySearch = Nibbles<'a>;
 }
 
-annotation! {
-    struct RadixAnnotation<K> {
-        cardinality: Cardinality<u64>,
-        key: MaxKey<K>,
-    } where K: MaxKeyType
-}
-
-impl<K, V, H> Compound<H> for Radix<K, V, H>
+impl<K, V, A, H> Compound<H> for Radix<K, V, A, H>
 where
     K: 'static,
     V: Content<H>,
+    A: Annotation<V, H>,
     H: ByteHash,
 {
     type Leaf = V;
-    type Annotation = Cardinality<u64>;
+    type Annotation = A;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
         &mut self.handles
@@ -384,12 +398,13 @@ mod test {
     use std::hash::{Hash, Hasher};
 
     use kelvin::{
-        quickcheck_map, tests::CorrectEmptyState, Blake2b, DebugDraw, DrawState,
+        annotations::Cardinality, quickcheck_map, tests::CorrectEmptyState,
+        Blake2b, DebugDraw, DrawState,
     };
 
     #[test]
     fn trivial_map() {
-        let mut h = Radix::<_, _, Blake2b>::new();
+        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
         h.insert(String::from("hello"), String::from("world"))
             .unwrap();
         assert_eq!(*h.get("hello").unwrap().unwrap(), "world");
@@ -397,7 +412,7 @@ mod test {
 
     #[test]
     fn bigger_map() {
-        let mut h = Radix::<_, _, Blake2b>::new();
+        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
         for i in 0u16..1024 {
             let b = i.to_be_bytes();
             assert_eq!(h.insert(b, i).unwrap(), None);
@@ -408,7 +423,7 @@ mod test {
 
     #[test]
     fn insert_remove() {
-        let mut h = Radix::<_, _, Blake2b>::new();
+        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
         let n = 1024;
         for i in 0u16..n {
             let b = i.to_be_bytes();
@@ -432,7 +447,7 @@ mod test {
             keys[i as usize] = key;
         }
 
-        let mut h = Radix::<_, _, Blake2b>::new();
+        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
         for key in keys.iter() {
             let b = key.to_be_bytes();
             h.insert(b, *key).unwrap();
@@ -456,7 +471,7 @@ mod test {
             "",
         ];
 
-        let mut h = Radix::<_, _, Blake2b>::new();
+        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
 
         for i in 0..keys.len() {
             h.insert(keys[i], i as u16).unwrap();
@@ -469,7 +484,7 @@ mod test {
 
     #[test]
     fn splitting() {
-        let mut h = Radix::<_, _, Blake2b>::new();
+        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
         h.insert(vec![0x00, 0x00], 0).unwrap();
         assert_eq!(h.insert(vec![0x00, 0x00], 0).unwrap(), Some(0));
         h.insert(vec![0x00, 0x10], 8).unwrap();
@@ -480,7 +495,7 @@ mod test {
 
     #[test]
     fn collapse() {
-        let mut h = Radix::<_, _, Blake2b>::new();
+        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
         h.insert(vec![0x00, 0x00], 0).unwrap();
         h.insert(vec![0x00, 0x10], 0).unwrap();
 
@@ -491,10 +506,11 @@ mod test {
         h.assert_correct_empty_state();
     }
 
-    impl<K, V, H> DebugDraw<H> for Radix<K, V, H>
+    impl<K, V, A, H> DebugDraw<H> for Radix<K, V, A, H>
     where
-        V: fmt::Debug + Content<H>,
         K: 'static,
+        V: fmt::Debug + Content<H>,
+        A: Annotation<V, H>,
         H: ByteHash,
     {
         fn draw_conf(&self, state: &mut DrawState) -> String {
@@ -520,5 +536,5 @@ mod test {
         }
     }
 
-    quickcheck_map!(|| Radix::new());
+    quickcheck_map!(|| Radix::<_, _, Cardinality<u64>, _>::new());
 }

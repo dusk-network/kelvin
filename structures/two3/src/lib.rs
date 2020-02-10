@@ -1,3 +1,6 @@
+//! A 2-3 Tree implemented on kelvin
+#![warn(missing_docs)]
+
 use std::borrow::Borrow;
 use std::io;
 use std::marker::PhantomData;
@@ -7,22 +10,29 @@ use arrayvec::ArrayVec;
 
 use kelvin::{
     annotation,
-    annotations::{Cardinality, Counter, MaxKey, MaxKeyType},
+    annotations::{Annotation, Cardinality, Counter, MaxKey, MaxKeyType},
     ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
     SearchResult, Sink, Source, KV,
 };
 
+/// The default 2-3 tree
+pub type DefaultTwo3Map<K, V, H> = Two3Tree<K, V, MaxKey<K>, H>;
+
 const N: usize = 2;
 const M: usize = 3;
 
-/// A hash array mapped trie
+/// A 2-3 tree
 #[derive(Clone)]
-pub struct Two3Tree<K, V, H: ByteHash>(ArrayVec<[Handle<Self, H>; M]>)
+pub struct Two3Tree<K, V, A, H: ByteHash>(ArrayVec<[Handle<Self, H>; M]>)
 where
     Self: Compound<H>;
 
-impl<K: Content<H> + Ord, V: Content<H>, H: ByteHash> Default
-    for Two3Tree<K, V, H>
+impl<K, V, A, H> Default for Two3Tree<K, V, A, H>
+where
+    K: Content<H> + Ord,
+    V: Content<H>,
+    A: Annotation<KV<K, V>, H>,
+    H: ByteHash,
 {
     fn default() -> Self {
         Two3Tree(Default::default())
@@ -30,7 +40,7 @@ impl<K: Content<H> + Ord, V: Content<H>, H: ByteHash> Default
 }
 
 annotation! {
-    pub struct Two3TreeAnnotation<K, U> {
+    struct Two3TreeAnnotation<K, U> {
         key: MaxKey<K>,
         count: Cardinality<U>,
     }
@@ -39,6 +49,7 @@ annotation! {
         U: Counter
 }
 
+/// Struct used to search the 2-3 Tree
 pub struct Two3TreeSearch<'a, K, O: ?Sized>(&'a O, PhantomData<K>);
 
 impl<'a, K, O> Two3TreeSearch<'a, K, O> {
@@ -53,16 +64,18 @@ impl<'a, K, O: ?Sized> From<&'a O> for Two3TreeSearch<'a, K, O> {
     }
 }
 
-impl<'a, K, V, O, H> Method<Two3Tree<K, V, H>, H> for Two3TreeSearch<'a, K, O>
+impl<'a, K, V, A, O, H> Method<Two3Tree<K, V, A, H>, H>
+    for Two3TreeSearch<'a, K, O>
 where
     K: Ord + Borrow<O> + Content<H>,
     V: Content<H>,
+    A: Annotation<KV<K, V>, H> + Borrow<MaxKey<K>>,
     O: Ord + ?Sized,
     H: ByteHash,
 {
     fn select(
         &mut self,
-        compound: &Two3Tree<K, V, H>,
+        compound: &Two3Tree<K, V, A, H>,
         _: usize,
     ) -> SearchResult {
         for (i, h) in compound.0.iter().enumerate() {
@@ -110,10 +123,11 @@ where
     Merge(C::Leaf),
 }
 
-impl<K, V, H> Two3Tree<K, V, H>
+impl<K, V, A, H> Two3Tree<K, V, A, H>
 where
     K: Content<H> + Ord,
     V: Content<H>,
+    A: Annotation<KV<K, V>, H> + Borrow<MaxKey<K>>,
     H: ByteHash,
 {
     /// Creates a new Two3Tree
@@ -416,10 +430,11 @@ where
     }
 }
 
-impl<K, V, H> Content<H> for Two3Tree<K, V, H>
+impl<K, V, A, H> Content<H> for Two3Tree<K, V, A, H>
 where
     K: Content<H> + Ord,
     V: Content<H>,
+    A: Annotation<KV<K, V>, H>,
     H: ByteHash,
 {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
@@ -440,15 +455,16 @@ where
     }
 }
 
-impl<K, V, H> Compound<H> for Two3Tree<K, V, H>
+impl<K, V, A, H> Compound<H> for Two3Tree<K, V, A, H>
 where
     H: ByteHash,
     K: Content<H> + Ord,
     V: Content<H>,
+    A: Annotation<KV<K, V>, H>,
 {
     type Leaf = KV<K, V>;
 
-    type Annotation = Two3TreeAnnotation<K, u64>;
+    type Annotation = A;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
         &mut self.0
@@ -459,12 +475,13 @@ where
     }
 }
 
-impl<'a, K, O, V, H> Map<'a, K, O, V, H> for Two3Tree<K, V, H>
+impl<'a, K, V, A, O, H> Map<'a, K, O, V, H> for Two3Tree<K, V, A, H>
 where
     K: Content<H> + Ord + Borrow<O>,
     V: Content<H>,
-    H: ByteHash,
+    A: Annotation<KV<K, V>, H> + Borrow<MaxKey<K>>,
     O: Ord + ?Sized + 'a,
+    H: ByteHash,
 {
     type KeySearch = Two3TreeSearch<'a, K, O>;
 }
@@ -478,14 +495,14 @@ mod test {
 
     #[test]
     fn trivial_map() {
-        let mut h = Two3Tree::<_, _, Blake2b>::new();
+        let mut h = Two3Tree::<_, _, MaxKey<_>, Blake2b>::new();
         h.insert(28, 28).unwrap();
         assert_eq!(*h.get(&28).unwrap().unwrap(), 28);
     }
 
     #[test]
     fn bigger_map() {
-        let mut h = Two3Tree::<_, _, Blake2b>::new();
+        let mut h = Two3Tree::<_, _, MaxKey<_>, Blake2b>::new();
         let bigger = 1024;
         for i in 0..bigger {
             h.insert(i, i).unwrap();
@@ -497,7 +514,7 @@ mod test {
 
     #[test]
     fn bigger_map_reverse() {
-        let mut h = Two3Tree::<_, _, Blake2b>::new();
+        let mut h = Two3Tree::<_, _, MaxKey<_>, Blake2b>::new();
         let bigger = 1024;
         for i in 0..bigger {
             let i = bigger - i - 1;
@@ -510,7 +527,7 @@ mod test {
 
     #[test]
     fn insert_remove() {
-        let mut h = Two3Tree::<_, _, Blake2b>::new();
+        let mut h = Two3Tree::<_, _, MaxKey<_>, Blake2b>::new();
         let bigger = 1024;
         for i in 0..bigger {
             let i = bigger - i - 1;
@@ -523,7 +540,7 @@ mod test {
 
     #[test]
     fn insert_remove_reverse() {
-        let mut h = Two3Tree::<_, _, Blake2b>::new();
+        let mut h = Two3Tree::<_, _, MaxKey<_>, Blake2b>::new();
         let bigger = 4;
         for i in 0..bigger {
             h.insert(i, i).unwrap();
@@ -536,7 +553,7 @@ mod test {
 
     #[test]
     fn insert_get_reverse() {
-        let mut h = Two3Tree::<_, _, Blake2b>::new();
+        let mut h = Two3Tree::<_, _, MaxKey<_>, Blake2b>::new();
         let bigger = 4;
         for i in 0..bigger {
             h.insert(i, i).unwrap();
@@ -549,16 +566,16 @@ mod test {
 
     #[test]
     fn borrowed_keys() {
-        let mut map = Two3Tree::<String, u8, Blake2b>::new();
+        let mut map = Two3Tree::<String, u8, MaxKey<_>, Blake2b>::new();
         map.insert("hello".into(), 8).unwrap();
         assert_eq!(*map.get("hello").unwrap().unwrap(), 8);
     }
 
     #[test]
     fn nested_maps() {
-        let mut map_a = Two3Tree::<_, _, Blake2b>::new();
+        let mut map_a = Two3Tree::<_, _, MaxKey<_>, Blake2b>::new();
         for i in 0..100 {
-            let mut map_b = Two3Tree::<_, _, Blake2b>::new();
+            let mut map_b = Two3Tree::<_, _, MaxKey<_>, Blake2b>::new();
 
             for o in 0..100 {
                 map_b.insert(o, o).unwrap();
@@ -576,5 +593,7 @@ mod test {
         }
     }
 
-    quickcheck_map!(|| Two3Tree::new());
+    quickcheck_map!(|| {
+        Two3Tree::<_, _, Two3TreeAnnotation<_, u64>, Blake2b>::new()
+    });
 }

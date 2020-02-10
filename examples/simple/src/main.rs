@@ -1,12 +1,13 @@
 use std::io;
 
 use kelvin::{Blake2b, ByteHash, Content, Map, Root, Sink, Source};
-use kelvin_btree::BTree;
+use kelvin_hamt::DefaultHAMTMap as HAMT;
+use kelvin_two3::DefaultTwo3Map as Two3;
 
 #[derive(Clone)]
 struct State<H: ByteHash> {
-    map_a: BTree<String, String, H>,
-    map_b: BTree<u64, u64, H>,
+    map_a: HAMT<String, String, H>,
+    map_b: Two3<u64, u64, H>,
     counter: u64,
 }
 
@@ -14,13 +15,13 @@ struct State<H: ByteHash> {
 impl<H: ByteHash> Default for State<H> {
     fn default() -> Self {
         // Set up a default kv for map_a:
-        let mut map_a = BTree::new();
+        let mut map_a = HAMT::new();
         map_a
             .insert("Hello".into(), "World".into())
             .expect("in memory");
         State {
             map_a,
-            map_b: BTree::default(),
+            map_b: Two3::default(),
             counter: 0,
         }
     }
@@ -35,8 +36,8 @@ impl<H: ByteHash> Content<H> for State<H> {
 
     fn restore(source: &mut Source<H>) -> io::Result<Self> {
         Ok(State {
-            map_a: BTree::restore(source)?,
-            map_b: BTree::restore(source)?,
+            map_a: HAMT::restore(source)?,
+            map_b: Two3::restore(source)?,
             counter: u64::restore(source)?,
         })
     }

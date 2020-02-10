@@ -1,3 +1,6 @@
+//! A Hash-array mapped trie implemented on kelvin
+#![warn(missing_docs)]
+
 use std::borrow::Borrow;
 use std::hash::Hash;
 use std::io;
@@ -6,21 +9,34 @@ use std::marker::PhantomData;
 use std::mem;
 
 use kelvin::{
-    annotation,
-    annotations::{Cardinality, MaxKey, MaxKeyType},
+    annotations::{Annotation, Cardinality, VoidAnnotation},
     ByteHash, Compound, Content, Handle, HandleMut, HandleOwned, HandleRef,
     HandleType, Map, Method, SearchResult, Sink, Source, KV,
 };
+
+/// Default HAMT-map without annotations
+pub type DefaultHAMTMap<K, V, H> = HAMT<K, V, VoidAnnotation, H>;
+/// Default HAMT-map with Cardinality annotation (for `.count()`)
+pub type CountingHAMTMap<K, V, H> = HAMT<K, V, Cardinality<u64>, H>;
 
 const N_BUCKETS: usize = 16;
 
 /// A hash array mapped trie
 #[derive(Clone)]
-pub struct HAMT<K, V, H: ByteHash>([Handle<Self, H>; N_BUCKETS])
+pub struct HAMT<K, V, A, H>([Handle<Self, H>; N_BUCKETS])
 where
-    Self: Compound<H>;
+    K: Content<H>,
+    V: Content<H>,
+    A: Annotation<KV<K, V>, H>,
+    H: ByteHash;
 
-impl<K: Content<H>, V: Content<H>, H: ByteHash> Default for HAMT<K, V, H> {
+impl<K, V, A, H> Default for HAMT<K, V, A, H>
+where
+    K: Content<H>,
+    V: Content<H>,
+    A: Annotation<KV<K, V>, H>,
+    H: ByteHash,
+{
     fn default() -> Self {
         HAMT(Default::default())
     }
@@ -35,6 +51,7 @@ fn select_slot(hash: &[u8], depth: usize) -> usize {
     }) as usize
 }
 
+/// Type for searching for keys in the HAMT
 pub struct HAMTSearch<'a, K, V, O, H>
 where
     O: ?Sized,
@@ -62,14 +79,20 @@ where
     }
 }
 
-impl<'a, K, V, O, H> Method<HAMT<K, V, H>, H> for HAMTSearch<'a, K, V, O, H>
+impl<'a, K, V, A, O, H> Method<HAMT<K, V, A, H>, H>
+    for HAMTSearch<'a, K, V, O, H>
 where
     K: Borrow<O> + Content<H>,
     V: Content<H>,
+    A: Annotation<KV<K, V>, H>,
     O: ?Sized + Eq,
     H: ByteHash,
 {
-    fn select(&mut self, compound: &HAMT<K, V, H>, _: usize) -> SearchResult {
+    fn select(
+        &mut self,
+        compound: &HAMT<K, V, A, H>,
+        _: usize,
+    ) -> SearchResult {
         let slot = select_slot(self.hash.as_ref(), self.depth);
         self.depth += 1;
         match compound.0[slot].leaf().map(Borrow::borrow) {
@@ -87,10 +110,11 @@ enum Removed<L> {
     Collapse(L, L),
 }
 
-impl<K, V, H> HAMT<K, V, H>
+impl<K, V, A, H> HAMT<K, V, A, H>
 where
     K: Content<H> + Eq + Hash,
     V: Content<H>,
+    A: Annotation<KV<K, V>, H>,
     H: ByteHash,
 {
     /// Creates a new HAMT
@@ -243,10 +267,11 @@ where
     }
 }
 
-impl<K, V, H> Content<H> for HAMT<K, V, H>
+impl<K, V, A, H> Content<H> for HAMT<K, V, A, H>
 where
     K: Content<H>,
     V: Content<H>,
+    A: Annotation<KV<K, V>, H>,
     H: ByteHash,
 {
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
@@ -281,31 +306,26 @@ where
     }
 }
 
-impl<'a, K, O, V, H> Map<'a, K, O, V, H> for HAMT<K, V, H>
+impl<'a, K, V, A, O, H> Map<'a, K, O, V, H> for HAMT<K, V, A, H>
 where
     K: Content<H> + Borrow<O>,
     V: Content<H>,
     H: ByteHash,
+    A: Annotation<KV<K, V>, H>,
     O: Eq + ?Sized + 'a + Hash,
 {
     type KeySearch = HAMTSearch<'a, K, V, O, H>;
 }
 
-annotation! {
-    struct HAMTAnnotation<K> {
-        cardinality: Cardinality<u64>,
-        key: MaxKey<K>,
-    } where K: MaxKeyType
-}
-
-impl<K, V, H> Compound<H> for HAMT<K, V, H>
+impl<K, V, A, H> Compound<H> for HAMT<K, V, A, H>
 where
-    H: ByteHash,
     K: Content<H>,
     V: Content<H>,
+    A: Annotation<KV<K, V>, H>,
+    H: ByteHash,
 {
     type Leaf = KV<K, V>;
-    type Annotation = Cardinality<u64>;
+    type Annotation = A;
 
     fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
         &mut self.0
@@ -325,14 +345,14 @@ mod test {
 
     #[test]
     fn trivial_map() {
-        let mut h = HAMT::<_, _, Blake2b>::new();
+        let mut h = HAMT::<_, _, VoidAnnotation, Blake2b>::new();
         h.insert(28, 28).unwrap();
         assert_eq!(*h.get(&28).unwrap().unwrap(), 28);
     }
 
     #[test]
     fn bigger_map() {
-        let mut h = HAMT::<_, _, Blake2b>::new();
+        let mut h = HAMT::<_, _, VoidAnnotation, Blake2b>::new();
         for i in 0..1024 {
             assert!(h.get(&i).unwrap().is_none());
             h.insert(i, i).unwrap();
@@ -342,9 +362,9 @@ mod test {
 
     #[test]
     fn nested_maps() {
-        let mut map_a = HAMT::<_, _, Blake2b>::new();
+        let mut map_a = HAMT::<_, _, VoidAnnotation, Blake2b>::new();
         for i in 0..128 {
-            let mut map_b = HAMT::<_, _, Blake2b>::new();
+            let mut map_b = HAMT::<_, _, VoidAnnotation, Blake2b>::new();
 
             for o in 0..128 {
                 map_b.insert(o, o).unwrap();
@@ -362,5 +382,5 @@ mod test {
         }
     }
 
-    quickcheck_map!(|| HAMT::new());
+    quickcheck_map!(|| CountingHAMTMap::new());
 }
