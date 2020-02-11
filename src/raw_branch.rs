@@ -5,14 +5,10 @@ use std::ops::{Deref, DerefMut};
 
 use bytehash::ByteHash;
 use cache::Cached;
-use smallvec::SmallVec;
 
 use crate::compound::Compound;
 use crate::handle::{Handle, HandleRef};
 use crate::search::{Method, SearchResult};
-
-// how deep the branch can be without allocating
-const STACK_BRANCH_MAX_DEPTH: usize = 6;
 
 pub enum Found {
     Leaf,
@@ -33,7 +29,7 @@ pub struct Level<'a, C, H> {
 }
 
 pub(crate) struct RawBranch<'a, C, H> {
-    levels: SmallVec<[Level<'a, C, H>; STACK_BRANCH_MAX_DEPTH]>,
+    levels: Vec<Level<'a, C, H>>,
     exact: bool,
 }
 
@@ -252,7 +248,7 @@ where
     H: ByteHash,
 {
     pub fn new_cached(node: Cached<'a, C>) -> Self {
-        let mut vec = SmallVec::new();
+        let mut vec = Vec::new();
         vec.push(Level::new_cached(node));
         RawBranch {
             levels: vec,
@@ -261,7 +257,7 @@ where
     }
 
     pub fn new_mutable(node: &'a mut C) -> Self {
-        let mut vec = SmallVec::new();
+        let mut vec = Vec::new();
         vec.push(Level::new_mutable(node));
         RawBranch {
             levels: vec,

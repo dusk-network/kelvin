@@ -93,6 +93,22 @@ where
     _marker: PhantomData<(K, V)>,
 }
 
+// The following
+unsafe impl<'a, K, V, C, H> StableAddress for ValPath<'a, K, V, C, H>
+where
+    C: Compound<H>,
+    C::Leaf: Borrow<V>,
+    H: ByteHash,
+{
+}
+unsafe impl<'a, K, V, C, H> StableAddress for ValPathMut<'a, K, V, C, H>
+where
+    C: Compound<H>,
+    C::Leaf: Borrow<V>,
+    H: ByteHash,
+{
+}
+
 impl<'a, K, V, C, H> ValPath<'a, K, V, C, H>
 where
     C: Compound<H>,

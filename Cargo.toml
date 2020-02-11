@@ -20,7 +20,6 @@ appendix = { version = "0.2", optional = true }
 web-sys = { optional = true, features = [ "Window", "Storage" ], version = "0.3"}
 futures = "0.3.1"
 wasm-bindgen = { optional = true, version = "0.2" }
-smallvec = "0.6"
 base64 = "0.11"
 num = "0.2"
 quickcheck = "0.8"
