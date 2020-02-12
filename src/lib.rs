@@ -44,7 +44,7 @@ pub use crate::source::Source;
 pub use crate::store::{Shared, Snapshot, Store};
 
 // Re-export
-pub use bytehash::{Blake2b, ByteHash};
+pub use bytehash::{Blake2b, ByteHash, State as ByteHashState};
 
 /// Persistant store using Blake2b
 pub type DefaultStore = Store<Blake2b>;
