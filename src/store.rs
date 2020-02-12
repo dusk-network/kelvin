@@ -18,6 +18,9 @@ use crate::source::Source;
 #[derive(Clone)]
 pub struct Store<H: ByteHash>(Arc<StoreInner<H>>);
 
+unsafe impl<H: ByteHash> Send for Store<H> {}
+unsafe impl<H: ByteHash> Sync for Store<H> {}
+
 const GENERATIONS: usize = 8;
 
 pub struct StoreInner<H: ByteHash> {
