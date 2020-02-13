@@ -19,7 +19,7 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
-    /// Select among the handles of the node
+    /// Select among the handles of the node, indexed from `offset`
     fn select(&mut self, compound: &C, offset: usize) -> SearchResult;
 }
 
