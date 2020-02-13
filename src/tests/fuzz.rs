@@ -15,9 +15,19 @@ fn hash<T: Hash>(t: T) -> u64 {
 /// Fuzzes a type with regards to its Content implementation.
 /// making sure every serialization produces an Equal result when deserialized
 pub fn fuzz_content<C: Content<H> + Arbitrary + PartialEq, H: ByteHash>() {
+    fuzz_content_iterations::<C, H>(FUZZ_ITERATIONS)
+}
+
+/// Fuzzes for a set number of iterations
+pub fn fuzz_content_iterations<
+    C: Content<H> + Arbitrary + PartialEq,
+    H: ByteHash,
+>(
+    iterations: usize,
+) {
     let store = Store::ephemeral();
     let mut entropy = 0;
-    for _ in 0..FUZZ_ITERATIONS {
+    for _ in 0..iterations {
         let mut bytes = vec![];
 
         let mut content = {
