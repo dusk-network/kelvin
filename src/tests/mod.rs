@@ -1,7 +1,7 @@
 mod fuzz;
 mod quickcheck_map;
 use crate::{ByteHash, Compound, HandleType};
-pub use fuzz::fuzz_content;
+pub use fuzz::{fuzz_content, fuzz_content_iterations};
 pub use quickcheck;
 pub use rand;
 pub use tempfile;
