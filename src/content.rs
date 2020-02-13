@@ -37,7 +37,10 @@ impl<T: Content<H>, H: ByteHash> Content<H> for Option<T> {
         match byte[0] {
             0 => Ok(None),
             1 => Ok(Some(T::restore(source)?)),
-            _ => panic!("Invalid Option encoding"),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid Option encoding",
+            )),
         }
     }
 }
@@ -81,6 +84,30 @@ impl<H: ByteHash> Content<H> for u8 {
         let mut byte = [0u8];
         source.read_exact(&mut byte)?;
         Ok(byte[0])
+    }
+}
+
+impl<H: ByteHash> Content<H> for bool {
+    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
+        if *self {
+            sink.write_all(&[1])?;
+        } else {
+            sink.write_all(&[0])?;
+        }
+        Ok(())
+    }
+
+    fn restore(source: &mut Source<H>) -> io::Result<Self> {
+        let mut byte = [0u8];
+        source.read_exact(&mut byte)?;
+        match byte {
+            [0] => Ok(false),
+            [1] => Ok(true),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid bool encoding",
+            )),
+        }
     }
 }
 
