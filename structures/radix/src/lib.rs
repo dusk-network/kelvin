@@ -1,7 +1,6 @@
 //! A Radix trie implemented on kelvin
 #![warn(missing_docs)]
 
-use std::borrow::Borrow;
 use std::io::{self};
 use std::mem;
 
@@ -11,8 +10,8 @@ use nibbles::{AsNibbles, NibbleBuf, Nibbles};
 
 use kelvin::{
     annotations::{Annotation, VoidAnnotation},
-    ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
-    SearchResult, Sink, Source,
+    ByteHash, Compound, Content, Handle, HandleMut, HandleType, Method,
+    SearchResult, Sink, Source, ValPath, ValPathMut,
 };
 
 const N_BUCKETS: usize = 17;
@@ -125,6 +124,25 @@ where
         Default::default()
     }
 
+    /// Get a reference to a value in the map
+    pub fn get<O>(&self, k: &O) -> io::Result<Option<ValPath<K, V, Self, H>>>
+    where
+        O: ?Sized + AsRef<[u8]>,
+    {
+        ValPath::new(self, &mut Nibbles::from(k.as_ref()))
+    }
+
+    /// Get a mutable reference to a value in the map
+    pub fn get_mut<O>(
+        &mut self,
+        k: &O,
+    ) -> io::Result<Option<ValPathMut<K, V, Self, H>>>
+    where
+        O: ?Sized + AsRef<[u8]>,
+    {
+        ValPathMut::new(self, &mut Nibbles::from(k.as_ref()))
+    }
+
     /// Insert key-value pair into the Radix, optionally returning expelled value
     pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
         debug_assert!(k.as_ref().len() <= MAX_KEY_LEN);
@@ -206,7 +224,10 @@ where
     }
 
     /// Remove element with given key, returning it.
-    pub fn remove(&mut self, k: &K) -> io::Result<Option<V>> {
+    pub fn remove<O>(&mut self, k: &O) -> io::Result<Option<V>>
+    where
+        O: ?Sized + AsRef<[u8]>,
+    {
         debug_assert!(k.as_ref().len() <= MAX_KEY_LEN);
         let mut search = Nibbles::new(k.as_ref());
         match self._remove(&mut search, 0)? {
@@ -359,17 +380,6 @@ where
     }
 }
 
-impl<'a, K, V, A, O, H> Map<'a, K, O, V, H> for Radix<K, V, A, H>
-where
-    K: AsRef<[u8]> + Eq + Borrow<O> + 'static,
-    V: Content<H>,
-    A: Annotation<V, H>,
-    O: Eq + AsRef<[u8]> + 'a + ?Sized,
-    H: ByteHash,
-{
-    type KeySearch = Nibbles<'a>;
-}
-
 impl<K, V, A, H> Compound<H> for Radix<K, V, A, H>
 where
     K: 'static,
@@ -491,6 +501,14 @@ mod test {
 
         assert_eq!(*h.get(&vec![0x00, 0x00]).unwrap().unwrap(), 0);
         assert_eq!(*h.get(&vec![0x00, 0x10]).unwrap().unwrap(), 8);
+    }
+
+    #[test]
+    fn borrowed_keys() {
+        let mut map = Radix::<String, u8, VoidAnnotation, Blake2b>::new();
+        map.insert("hello".into(), 8).unwrap();
+        assert_eq!(*map.get("hello").unwrap().unwrap(), 8);
+        assert_eq!(map.remove("hello").unwrap().unwrap(), 8);
     }
 
     #[test]

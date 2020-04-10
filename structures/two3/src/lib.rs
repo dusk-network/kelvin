@@ -11,8 +11,8 @@ use arrayvec::ArrayVec;
 use kelvin::{
     annotation,
     annotations::{Annotation, Cardinality, Counter, MaxKey, MaxKeyType},
-    ByteHash, Compound, Content, Handle, HandleMut, HandleType, Map, Method,
-    SearchResult, Sink, Source, KV,
+    ByteHash, Compound, Content, Handle, HandleMut, HandleType, Method,
+    SearchResult, Sink, Source, ValPath, ValPathMut, KV,
 };
 
 /// The default 2-3 tree
@@ -52,7 +52,10 @@ annotation! {
 /// Struct used to search the 2-3 Tree
 pub struct Two3TreeSearch<'a, K, O: ?Sized>(&'a O, PhantomData<K>);
 
-impl<'a, K, O> Two3TreeSearch<'a, K, O> {
+impl<'a, K, O> Two3TreeSearch<'a, K, O>
+where
+    O: ?Sized,
+{
     fn new(key: &'a O) -> Self {
         Two3TreeSearch(key, PhantomData)
     }
@@ -142,6 +145,27 @@ where
             InsertResult::Replaced(KV { key: _, val }) => Ok(Some(val)),
             InsertResult::Split(_) => unreachable!(),
         }
+    }
+
+    /// Get a reference to a value in the map
+    pub fn get<O>(&self, k: &O) -> io::Result<Option<ValPath<K, V, Self, H>>>
+    where
+        O: ?Sized + Ord + Eq,
+        K: Borrow<O>,
+    {
+        ValPath::new(self, &mut Two3TreeSearch::from(k.borrow()))
+    }
+
+    /// Get a mutable reference to a value in the map
+    pub fn get_mut<O>(
+        &mut self,
+        k: &O,
+    ) -> io::Result<Option<ValPathMut<K, V, Self, H>>>
+    where
+        O: ?Sized + Ord + Eq + Borrow<K>,
+        K: Borrow<O>,
+    {
+        ValPathMut::new(self, &mut Two3TreeSearch::from(k.borrow()))
     }
 
     fn _insert(
@@ -278,19 +302,27 @@ where
     }
 
     /// Remove element with given key, returning it.
-    pub fn remove(&mut self, k: &K) -> io::Result<Option<V>> {
-        match self._remove(k, 0)? {
+    pub fn remove<O>(&mut self, o: &O) -> io::Result<Option<V>>
+    where
+        O: ?Sized + Ord + Eq,
+        K: Borrow<O>,
+    {
+        match self._remove(o, 0)? {
             RemoveResult::Removed(KV { key: _, val }) => Ok(Some(val)),
             RemoveResult::Noop => Ok(None),
             _ => unreachable!(),
         }
     }
 
-    fn _remove(
+    fn _remove<O>(
         &mut self,
-        k: &K,
+        k: &O,
         depth: usize,
-    ) -> io::Result<RemoveResult<Self, H>> {
+    ) -> io::Result<RemoveResult<Self, H>>
+    where
+        O: ?Sized + Ord + Eq,
+        K: Borrow<O>,
+    {
         enum Action<L> {
             Noop,
             Remove(usize),
@@ -299,7 +331,7 @@ where
         // The default action
         let mut action = Action::Noop;
 
-        match Two3TreeSearch::new(k).select(self, 0) {
+        match Two3TreeSearch::new(k.borrow()).select(self, 0) {
             SearchResult::Leaf(i) => {
                 action = Action::Remove(i);
             }
@@ -311,10 +343,11 @@ where
                         let ann =
                             n.annotation().expect("node without annotation");
                         let max_key: &MaxKey<K> = ann.borrow();
+                        let max_key: &K = max_key.borrow();
 
                         // Recurse
-                        if **max_key >= *k {
-                            match n._remove(&k, depth + 1)? {
+                        if max_key.borrow() >= k {
+                            match n._remove(k, depth + 1)? {
                                 RemoveResult::Noop => (),
                                 RemoveResult::Removed(leaf) => {
                                     return Ok(RemoveResult::Removed(leaf))
@@ -475,17 +508,6 @@ where
     }
 }
 
-impl<'a, K, V, A, O, H> Map<'a, K, O, V, H> for Two3Tree<K, V, A, H>
-where
-    K: Content<H> + Ord + Borrow<O>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H> + Borrow<MaxKey<K>>,
-    O: Ord + ?Sized + 'a,
-    H: ByteHash,
-{
-    type KeySearch = Two3TreeSearch<'a, K, O>;
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -569,6 +591,7 @@ mod test {
         let mut map = Two3Tree::<String, u8, MaxKey<_>, Blake2b>::new();
         map.insert("hello".into(), 8).unwrap();
         assert_eq!(*map.get("hello").unwrap().unwrap(), 8);
+        assert_eq!(map.remove("hello").unwrap().unwrap(), 8);
     }
 
     #[test]
