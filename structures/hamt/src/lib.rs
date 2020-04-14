@@ -11,7 +11,7 @@ use std::mem;
 use kelvin::{
     annotations::{Annotation, Cardinality, VoidAnnotation},
     ByteHash, Compound, Content, Handle, HandleMut, HandleOwned, HandleRef,
-    HandleType, Map, Method, SearchResult, Sink, Source, KV,
+    HandleType, Method, SearchResult, Sink, Source, ValPath, ValPathMut, KV,
 };
 
 /// Default HAMT-map without annotations
@@ -127,6 +127,27 @@ where
         self.sub_insert(0, H::hash(&k), k, v)
     }
 
+    /// Get a reference to a value in the map
+    pub fn get<O>(&self, k: &O) -> io::Result<Option<ValPath<K, V, Self, H>>>
+    where
+        O: ?Sized + Hash + Eq,
+        K: Borrow<O>,
+    {
+        ValPath::new(self, &mut HAMTSearch::from(k.borrow()))
+    }
+
+    /// Get a mutable reference to a value in the map
+    pub fn get_mut<O>(
+        &mut self,
+        k: &O,
+    ) -> io::Result<Option<ValPathMut<K, V, Self, H>>>
+    where
+        O: ?Sized + Hash + Eq,
+        K: Borrow<O>,
+    {
+        ValPathMut::new(self, &mut HAMTSearch::from(k.borrow()))
+    }
+
     fn sub_insert(
         &mut self,
         depth: usize,
@@ -186,7 +207,11 @@ where
     }
 
     /// Remove element with given key, returning it.
-    pub fn remove(&mut self, k: &K) -> io::Result<Option<V>> {
+    pub fn remove<O>(&mut self, k: &O) -> io::Result<Option<V>>
+    where
+        O: ?Sized + Hash + Eq,
+        K: Borrow<O>,
+    {
         match self.sub_remove(0, H::hash(k), k)? {
             Removed::None => Ok(None),
             Removed::Leaf(KV { key: _, val }) => Ok(Some(val)),
@@ -194,12 +219,16 @@ where
         }
     }
 
-    fn sub_remove(
+    fn sub_remove<O>(
         &mut self,
         depth: usize,
         h: H::Digest,
-        k: &K,
-    ) -> io::Result<Removed<KV<K, V>>> {
+        k: &O,
+    ) -> io::Result<Removed<KV<K, V>>>
+    where
+        O: ?Sized + Hash + Eq,
+        K: Borrow<O>,
+    {
         let removed_leaf;
         {
             let s = select_slot(h.as_ref(), depth);
@@ -209,8 +238,8 @@ where
 
             match &mut *slot.inner_mut()? {
                 HandleMut::None => return Ok(Removed::None),
-                HandleMut::Leaf(KV { key, val: _ }) => {
-                    if key != k {
+                HandleMut::Leaf(KV { ref key, val: _ }) => {
+                    if key.borrow() != k {
                         return Ok(Removed::None);
                     }
                 }
@@ -306,17 +335,6 @@ where
     }
 }
 
-impl<'a, K, V, A, O, H> Map<'a, K, O, V, H> for HAMT<K, V, A, H>
-where
-    K: Content<H> + Borrow<O>,
-    V: Content<H>,
-    H: ByteHash,
-    A: Annotation<KV<K, V>, H>,
-    O: Eq + ?Sized + 'a + Hash,
-{
-    type KeySearch = HAMTSearch<'a, K, V, O, H>;
-}
-
 impl<K, V, A, H> Compound<H> for HAMT<K, V, A, H>
 where
     K: Content<H>,
@@ -358,6 +376,14 @@ mod test {
             h.insert(i, i).unwrap();
             assert_eq!(*h.get(&i).unwrap().unwrap(), i);
         }
+    }
+
+    #[test]
+    fn borrowed_keys() {
+        let mut map = HAMT::<String, u8, VoidAnnotation, Blake2b>::new();
+        map.insert("hello".into(), 8).unwrap();
+        assert_eq!(*map.get("hello").unwrap().unwrap(), 8);
+        assert_eq!(map.remove("hello").unwrap().unwrap(), 8);
     }
 
     #[test]

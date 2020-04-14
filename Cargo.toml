@@ -5,12 +5,12 @@ name = "kelvin"
 repository = "https://github.com/dusk-network/kelvin"
 description = "Merkle tree tooklit and backend"
 keywords = ["merkle", "datastructure", "database"]
-version = "0.11.2"
+version = "0.12.0"
 license = "MPL-2.0"
 
 [dependencies]
 arrayvec = "0.5.1"
-bytehash = "0.2"
+bytehash = "0.3"
 atomicwrites = "0.2"
 cache = "0.2.0"
 owning_ref = "0.4.0"

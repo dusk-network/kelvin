@@ -1,6 +1,6 @@
 [package]
 name = "kelvin-two3"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["Kristoffer Ström <kristoffer@dusk.network>"]
 edition = "2018"
 repository = "https://github.com/dusk-network/kelvin"
@@ -9,5 +9,5 @@ license = "MPL-2.0"
 description = "2-3 Tree Data structure"
 
 [dependencies]
-kelvin = { path = "../..", version = "0.11"  }
+kelvin = { path = "../..", version = "0.12"  }
 arrayvec = "0.5"

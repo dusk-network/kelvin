@@ -176,7 +176,8 @@ impl<'a> PartialEq for Nibbles<'a> {
 }
 
 impl NibbleBuf {
-    pub fn new(bytes: &[u8]) -> Self {
+    #[cfg(test)]
+    fn new(bytes: &[u8]) -> Self {
         let mut vec: Vec<u8> = Vec::with_capacity(bytes.len());
         vec.extend_from_slice(bytes);
         NibbleBuf {
@@ -196,11 +197,6 @@ impl NibbleBuf {
 
     pub fn trim_front(&mut self, by: usize) {
         self.ofs_front += by;
-        debug_assert!(self.ofs_front <= self.ofs_back)
-    }
-
-    pub fn trim_back(&mut self, by: usize) {
-        self.ofs_back -= by;
         debug_assert!(self.ofs_front <= self.ofs_back)
     }
 
@@ -342,22 +338,6 @@ mod test {
         for i in 0..5 {
             assert_eq!(common.get(i), i);
         }
-    }
-
-    #[test]
-    fn append_nibbles() {
-        let full = NibbleBuf::new(&[0x01, 0x23, 0x45, 0x67, 0x89]);
-
-        let mut a = NibbleBuf::new(&[0x01, 0x23, 0x45]);
-
-        let mut b = NibbleBuf::new(&[0x45, 0x67, 0x89]);
-
-        b.trim_front(1);
-        a.trim_back(1);
-
-        a.append(&b);
-
-        assert_eq!(a, full);
     }
 
     #[test]
