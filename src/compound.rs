@@ -1,8 +1,11 @@
 use bytehash::ByteHash;
+use std::io;
 
 use crate::annotations::Combine;
+use crate::branch::Branch;
 use crate::content::Content;
 use crate::handle::Handle;
+use crate::search::Method;
 
 /// A trait for tree-like structures containing leaves
 pub trait Compound<H>: Content<H> + Default
@@ -26,5 +29,12 @@ where
     /// Returns the annotation of Compound, if not empty
     fn annotation(&self) -> Option<Self::Annotation> {
         Self::Annotation::combine(self.children())
+    }
+
+    fn search<M: Method<Self, H>>(
+        &self,
+        m: &mut M,
+    ) -> io::Result<Option<Branch<Self, H>>> {
+        Branch::new(self, m)
     }
 }

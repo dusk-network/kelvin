@@ -15,7 +15,7 @@ use crate::sink::Sink;
 use crate::source::Source;
 
 /// A Key-value pair type
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct KV<K, V> {
     /// the key of the pair
     pub key: K,

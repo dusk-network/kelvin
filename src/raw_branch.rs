@@ -28,6 +28,18 @@ pub struct Level<'a, C, H> {
     node: NodeRef<'a, C, H>,
 }
 
+impl<'a, C, H> Deref for Level<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    type Target = C;
+
+    fn deref(&self) -> &Self::Target {
+        &self.node
+    }
+}
+
 pub(crate) struct RawBranch<'a, C, H> {
     levels: Vec<Level<'a, C, H>>,
     exact: bool,
@@ -73,7 +85,7 @@ where
         })
     }
 
-    pub fn inner_immutable(&self) -> InnerImmutable<C> {
+    pub fn inner(&self) -> InnerImmutable<C> {
         match self {
             NodeRef::Cached(c) => InnerImmutable::Cached(c),
             NodeRef::Mutable(m) => InnerImmutable::Borrowed(m),
@@ -101,7 +113,7 @@ where
     }
 }
 
-enum InnerImmutable<'a, C> {
+pub enum InnerImmutable<'a, C> {
     Cached(&'a Cached<'a, C>),
     Borrowed(&'a C),
 }
@@ -190,8 +202,8 @@ where
         }
     }
 
-    fn inner_immutable(&self) -> InnerImmutable<C> {
-        self.node.inner_immutable()
+    pub fn inner(&self) -> InnerImmutable<C> {
+        self.node.inner()
     }
 
     pub fn leaf(&self) -> Option<&C::Leaf> {
@@ -213,7 +225,7 @@ where
     }
 
     fn search<M: Method<C, H>>(&mut self, method: &mut M) -> io::Result<Found> {
-        let node = self.inner_immutable();
+        let node = self.inner();
         let children_len = node.children().len();
         if self.ofs + 1 > children_len {
             Ok(Found::None)
@@ -329,6 +341,10 @@ where
                 None
             }
         }
+    }
+
+    pub fn levels(&self) -> &[Level<'a, C, H>] {
+        &self.levels
     }
 
     fn pop_level(&mut self) -> bool {

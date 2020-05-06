@@ -23,7 +23,7 @@ mod source;
 mod store;
 
 pub use crate::annotations::{
-    Annotation, Associative, Combine, VoidAnnotation,
+    Annotation, Associative, Combine, ErasedAnnotation, VoidAnnotation,
 };
 pub use crate::backend::Backend;
 pub use crate::branch::{Branch, BranchMut};
