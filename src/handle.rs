@@ -3,6 +3,7 @@ use std::fmt;
 use std::io::{self, Read, Write};
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use bytehash::ByteHash;
@@ -16,13 +17,26 @@ use crate::sink::Sink;
 use crate::source::Source;
 use crate::store::Snapshot;
 
+pub trait RcExt<T> {
+    fn unwrap_or_clone(self) -> T;
+}
+
+impl<T: Clone> RcExt<T> for Rc<T> {
+    fn unwrap_or_clone(self) -> T {
+        match Rc::try_unwrap(self) {
+            Ok(t) => t,
+            Err(rc) => (*rc).clone(),
+        }
+    }
+}
+
 enum HandleInner<C, H>
 where
     C: Compound<H>,
     H: ByteHash,
 {
     Leaf(C::Leaf),
-    Node(Box<C>, C::Annotation),
+    Node(Rc<C>, C::Annotation),
     SharedNode(Arc<C>, C::Annotation),
     Persisted(Snapshot<C, H>, C::Annotation),
     None,
@@ -39,7 +53,7 @@ where
             HandleOwned::Leaf(l) => HandleInner::Leaf(l),
             HandleOwned::Node(c) => {
                 let ann = c.annotation().expect("Invalid empty owned node");
-                HandleInner::Node(Box::new(c), ann)
+                HandleInner::Node(Rc::new(c), ann)
             }
         }
     }
@@ -221,7 +235,7 @@ where
                 ann.persist(sink)
             }
             HandleInner::Node(ref mut node, ref ann) => {
-                let snap = sink.store().persist(&mut **node)?;
+                let snap = sink.store().persist(&mut *Rc::make_mut(node))?;
                 self.0 = HandleInner::Persisted(snap, ann.clone());
                 self.persist(sink)
             }
@@ -262,7 +276,7 @@ where
     }
 
     /// Constructs a new node Handle
-    pub fn new_node<I: Into<Box<C>>>(n: I) -> Handle<C, H> {
+    pub fn new_node<I: Into<Rc<C>>>(n: I) -> Handle<C, H> {
         let node = n.into();
         let ann = node.annotation().expect("Empty node handles are invalid");
         Handle(HandleInner::Node(node, ann))
@@ -290,7 +304,7 @@ where
     /// Converts handle into leaf, panics on mismatching type
     pub fn into_node(self) -> C {
         if let HandleInner::Node(n, _) = self.0 {
-            *n
+            n.unwrap_or_clone()
         } else {
             panic!("Not a node")
         }
@@ -365,7 +379,7 @@ where
         match mem::replace(&mut self.0, with.into()) {
             HandleInner::None => HandleOwned::None,
             HandleInner::Leaf(l) => HandleOwned::Leaf(l),
-            HandleInner::Node(c, _) => HandleOwned::Node(*c),
+            HandleInner::Node(c, _) => HandleOwned::Node(c.unwrap_or_clone()),
             _ => unreachable!("Mutable handles cannot be persisted or shared"),
         }
     }
@@ -383,14 +397,14 @@ where
             },
             HandleInner::Node(ref mut n, ref mut ann) => HandleMutWrap {
                 annotation: Some(ann),
-                inner: HandleMut::Node(&mut **n),
+                inner: HandleMut::Node(&mut *Rc::make_mut(n)),
             },
             HandleInner::Persisted(_, _) => {
                 if let HandleInner::Persisted(snap, ann) =
                     mem::replace(&mut self.0, HandleInner::None)
                 {
                     let restored = snap.restore()?;
-                    *self = Handle(HandleInner::Node(Box::new(restored), ann));
+                    *self = Handle(HandleInner::Node(Rc::new(restored), ann));
                     return self.inner_mut();
                 } else {
                     unreachable!()
@@ -406,7 +420,10 @@ where
             if let HandleInner::Node(node, ann) =
                 mem::replace(&mut self.0, HandleInner::None)
             {
-                self.0 = HandleInner::SharedNode(Arc::new(*node), ann)
+                self.0 = HandleInner::SharedNode(
+                    Arc::new(node.unwrap_or_clone()),
+                    ann,
+                )
             } else {
                 unreachable!()
             }
