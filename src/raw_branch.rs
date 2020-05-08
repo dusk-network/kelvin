@@ -23,6 +23,7 @@ enum NodeRef<'a, C, H> {
     Placeholder(PhantomData<H>),
 }
 
+/// Represents a level in a branch
 pub struct Level<'a, C, H> {
     ofs: usize,
     node: NodeRef<'a, C, H>,
@@ -113,6 +114,7 @@ where
     }
 }
 
+/// A reference to a cached or borrowed node
 pub enum InnerImmutable<'a, C> {
     Cached(&'a Cached<'a, C>),
     Borrowed(&'a C),
@@ -172,14 +174,25 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
-    pub fn new_cached(cached: Cached<'a, C>) -> Self {
+    /// Returs a reference to the handle pointing to the node below in the branch
+    pub fn referencing(&self) -> io::Result<HandleRef<C, H>> {
+        self.node.handle(self.ofs)
+    }
+
+    /// Returns the offset of the reference node in the level of the branch
+    /// i.e the node that references the level below.
+    pub fn offset(&self) -> usize {
+        self.ofs
+    }
+
+    fn new_cached(cached: Cached<'a, C>) -> Self {
         Level {
             ofs: 0,
             node: NodeRef::new_cached(cached),
         }
     }
 
-    pub fn insert_child(&mut self, node: C) {
+    fn insert_child(&mut self, node: C) {
         match &mut self.node {
             NodeRef::Cached(c) => {
                 self.node = NodeRef::Owned(Box::new((*c).clone()));
@@ -195,33 +208,29 @@ where
         }
     }
 
-    pub fn new_mutable(node: &'a mut C) -> Self {
+    fn new_mutable(node: &'a mut C) -> Self {
         Level {
             ofs: 0,
             node: NodeRef::new_mutable(node),
         }
     }
 
-    pub fn inner(&self) -> InnerImmutable<C> {
+    fn inner(&self) -> InnerImmutable<C> {
         self.node.inner()
     }
 
-    pub fn leaf(&self) -> Option<&C::Leaf> {
+    fn leaf(&self) -> Option<&C::Leaf> {
         self.node
             .children()
             .get(self.ofs)
             .and_then(|handle| handle.leaf())
     }
 
-    pub fn leaf_mut(&'a mut self) -> Option<&'a mut C::Leaf> {
+    fn leaf_mut(&'a mut self) -> Option<&'a mut C::Leaf> {
         self.node
             .children_mut()
             .get_mut(self.ofs)
             .and_then(|handle| handle.leaf_mut())
-    }
-
-    pub fn referencing(&self) -> io::Result<HandleRef<C, H>> {
-        self.node.handle(self.ofs)
     }
 
     fn search<M: Method<C, H>>(&mut self, method: &mut M) -> io::Result<Found> {

@@ -35,6 +35,7 @@ pub use crate::handle::{
 };
 pub use crate::iter::LeafIterable;
 pub use crate::map::{ValIterable, ValPath, ValPathMut, ValRef, ValRefMut, KV};
+pub use crate::raw_branch::Level;
 pub use crate::root::Root;
 pub use crate::search::{Method, SearchResult};
 pub use crate::sink::Sink;
