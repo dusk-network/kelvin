@@ -54,6 +54,7 @@ where
         })
     }
 
+    /// Returns a reference to the levels of the branch
     pub fn levels(&self) -> &[Level<'a, C, H>] {
         self.0.levels()
     }

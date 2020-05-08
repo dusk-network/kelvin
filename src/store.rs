@@ -35,11 +35,6 @@ impl<H: ByteHash> fmt::Debug for Store<H> {
     }
 }
 
-#[doc(hidden)]
-pub struct Shared<T, H: ByteHash>(T, PhantomData<H>);
-
-unsafe impl<T, H: ByteHash> Send for Shared<T, H> {}
-
 /// A snapshot of a structure state
 #[derive(Clone, Debug)]
 pub struct Snapshot<T, H: ByteHash> {

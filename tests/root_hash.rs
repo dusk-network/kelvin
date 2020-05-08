@@ -1,11 +1,5 @@
-// Example on how to use extra hash annotations to do merkle proofs
-use std::borrow::Borrow;
-
-use kelvin::{
-    Blake2b, Compound, Content, ErasedAnnotation, Store, VoidAnnotation,
-};
-use kelvin_hamt::{HAMTSearch, HAMT};
-use std::collections::hash_map::DefaultHasher;
+use kelvin::{Blake2b, Compound, Store, VoidAnnotation};
+use kelvin_hamt::HAMT;
 
 #[test]
 fn root_hash() {

@@ -5,53 +5,67 @@ use bytehash::{ByteHash, State};
 
 use crate::store::Store;
 
-pub trait SinkTrait<H: ByteHash>
-where
-    Self: io::Write,
-{
-    fn recur(&self) -> Sink<H>;
-}
-
 /// A sink for bytes, used in implementing `Content`
-pub struct Sink<'a, H: ByteHash> {
-    bytes: Vec<u8>,
-    store: &'a Store<H>,
+pub enum Sink<'a, H: ByteHash> {
+    /// Sink is only hashing
+    DryRun(H::State),
+    /// Sink is writing to storage and hashing
+    Writing(Vec<u8>, &'a Store<H>),
+    /// Sink is writing to storage with cached hash
+    WritingCached(Vec<u8>, H::Digest, &'a Store<H>),
 }
 
 impl<'a, H: ByteHash> Sink<'a, H> {
     pub(crate) fn new(store: &'a Store<H>) -> Self {
-        Sink {
-            bytes: vec![],
-            store,
+        Sink::Writing(vec![], store)
+    }
+
+    pub(crate) fn new_dry() -> Self {
+        Sink::DryRun(H::state())
+    }
+
+    pub(crate) fn new_cached(hash: H::Digest, store: &'a Store<H>) -> Self {
+        Sink::WritingCached(vec![], hash, store)
+    }
+
+    pub(crate) fn store(&self) -> Option<&Store<H>> {
+        match self {
+            Sink::Writing(_, ref store)
+            | Sink::WritingCached(_, _, ref store) => Some(store),
+            Sink::DryRun(_) => None,
         }
     }
 
-    pub(crate) fn store(&self) -> &Store<H> {
-        self.store
-    }
-
     pub(crate) fn fin(self) -> io::Result<H::Digest> {
-        let Sink { bytes, .. } = self;
-        let mut hasher = H::state();
-        hasher.write(&bytes);
-        let hash = hasher.fin();
-        self.store.put(hash, bytes)?;
-        Ok(hash)
-    }
-}
-
-impl<'a, H> SinkTrait<H> for Sink<'a, H>
-where
-    H: ByteHash,
-{
-    fn recur(&self) -> Sink<H> {
-        Self::new(self.store)
+        match self {
+            Sink::DryRun(state) => Ok(state.fin()),
+            Sink::Writing(bytes, store) => {
+                let mut hasher = H::state();
+                hasher.write(&bytes);
+                let hash = hasher.fin();
+                store.put(hash, bytes)?;
+                Ok(hash)
+            }
+            Sink::WritingCached(bytes, hash, store) => {
+                store.put(hash, bytes)?;
+                Ok(hash)
+            }
+        }
     }
 }
 
 impl<'a, H: ByteHash> io::Write for Sink<'a, H> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.bytes.write(buf)
+        match self {
+            Sink::DryRun(state) => {
+                // Note, this write is from Hasher, not from io;
+                state.write(buf);
+                Ok(buf.len())
+            }
+            Sink::Writing(bytes, ..) | Sink::WritingCached(bytes, ..) => {
+                bytes.write(buf)
+            }
+        }
     }
 
     fn flush(&mut self) -> io::Result<()> {

@@ -75,5 +75,5 @@ fn merkle_proof() {
     }
 
     // This is weird, unless hamt is referenced again, the borrow checker freaks out?
-    hamt;
+    let _ = hamt;
 }
