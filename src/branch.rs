@@ -5,8 +5,8 @@ use bytehash::ByteHash;
 use cache::Cached;
 
 use crate::compound::Compound;
+use crate::raw_branch::{Level, RawBranch};
 use crate::search::Method;
-use crate::raw_branch::RawBranch;
 
 /// A branch into a `Compound<H>`
 /// The Branch is guaranteed to always point to a leaf
@@ -52,6 +52,11 @@ where
         } else {
             None
         })
+    }
+
+    /// Returns a reference to the levels of the branch
+    pub fn levels(&self) -> &[Level<'a, C, H>] {
+        self.0.levels()
     }
 }
 

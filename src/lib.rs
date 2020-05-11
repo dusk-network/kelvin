@@ -23,7 +23,7 @@ mod source;
 mod store;
 
 pub use crate::annotations::{
-    Annotation, Associative, Combine, VoidAnnotation,
+    Annotation, Associative, Combine, ErasedAnnotation, VoidAnnotation,
 };
 pub use crate::backend::Backend;
 pub use crate::branch::{Branch, BranchMut};
@@ -35,11 +35,12 @@ pub use crate::handle::{
 };
 pub use crate::iter::LeafIterable;
 pub use crate::map::{ValIterable, ValPath, ValPathMut, ValRef, ValRefMut, KV};
+pub use crate::raw_branch::Level;
 pub use crate::root::Root;
 pub use crate::search::{Method, SearchResult};
 pub use crate::sink::Sink;
 pub use crate::source::Source;
-pub use crate::store::{Shared, Snapshot, Store};
+pub use crate::store::{Snapshot, Store};
 
 // Re-export
 pub use bytehash::{Blake2b, ByteHash, State as ByteHashState};

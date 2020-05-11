@@ -23,9 +23,22 @@ enum NodeRef<'a, C, H> {
     Placeholder(PhantomData<H>),
 }
 
+/// Represents a level in a branch
 pub struct Level<'a, C, H> {
     ofs: usize,
     node: NodeRef<'a, C, H>,
+}
+
+impl<'a, C, H> Deref for Level<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    type Target = C;
+
+    fn deref(&self) -> &Self::Target {
+        &self.node
+    }
 }
 
 pub(crate) struct RawBranch<'a, C, H> {
@@ -73,7 +86,7 @@ where
         })
     }
 
-    pub fn inner_immutable(&self) -> InnerImmutable<C> {
+    pub fn inner(&self) -> InnerImmutable<C> {
         match self {
             NodeRef::Cached(c) => InnerImmutable::Cached(c),
             NodeRef::Mutable(m) => InnerImmutable::Borrowed(m),
@@ -101,7 +114,8 @@ where
     }
 }
 
-enum InnerImmutable<'a, C> {
+/// A reference to a cached or borrowed node
+pub enum InnerImmutable<'a, C> {
     Cached(&'a Cached<'a, C>),
     Borrowed(&'a C),
 }
@@ -160,14 +174,25 @@ where
     C: Compound<H>,
     H: ByteHash,
 {
-    pub fn new_cached(cached: Cached<'a, C>) -> Self {
+    /// Returs a reference to the handle pointing to the node below in the branch
+    pub fn referencing(&self) -> io::Result<HandleRef<C, H>> {
+        self.node.handle(self.ofs)
+    }
+
+    /// Returns the offset of the reference node in the level of the branch
+    /// i.e the node that references the level below.
+    pub fn offset(&self) -> usize {
+        self.ofs
+    }
+
+    fn new_cached(cached: Cached<'a, C>) -> Self {
         Level {
             ofs: 0,
             node: NodeRef::new_cached(cached),
         }
     }
 
-    pub fn insert_child(&mut self, node: C) {
+    fn insert_child(&mut self, node: C) {
         match &mut self.node {
             NodeRef::Cached(c) => {
                 self.node = NodeRef::Owned(Box::new((*c).clone()));
@@ -183,37 +208,33 @@ where
         }
     }
 
-    pub fn new_mutable(node: &'a mut C) -> Self {
+    fn new_mutable(node: &'a mut C) -> Self {
         Level {
             ofs: 0,
             node: NodeRef::new_mutable(node),
         }
     }
 
-    fn inner_immutable(&self) -> InnerImmutable<C> {
-        self.node.inner_immutable()
+    fn inner(&self) -> InnerImmutable<C> {
+        self.node.inner()
     }
 
-    pub fn leaf(&self) -> Option<&C::Leaf> {
+    fn leaf(&self) -> Option<&C::Leaf> {
         self.node
             .children()
             .get(self.ofs)
             .and_then(|handle| handle.leaf())
     }
 
-    pub fn leaf_mut(&'a mut self) -> Option<&'a mut C::Leaf> {
+    fn leaf_mut(&'a mut self) -> Option<&'a mut C::Leaf> {
         self.node
             .children_mut()
             .get_mut(self.ofs)
             .and_then(|handle| handle.leaf_mut())
     }
 
-    pub fn referencing(&self) -> io::Result<HandleRef<C, H>> {
-        self.node.handle(self.ofs)
-    }
-
     fn search<M: Method<C, H>>(&mut self, method: &mut M) -> io::Result<Found> {
-        let node = self.inner_immutable();
+        let node = self.inner();
         let children_len = node.children().len();
         if self.ofs + 1 > children_len {
             Ok(Found::None)
@@ -329,6 +350,10 @@ where
                 None
             }
         }
+    }
+
+    pub fn levels(&self) -> &[Level<'a, C, H>] {
+        &self.levels
     }
 
     fn pop_level(&mut self) -> bool {

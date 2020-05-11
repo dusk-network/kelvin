@@ -29,6 +29,7 @@ macro_rules! quickcheck_map {
             Values,
             ValuesMut,
             Persist,
+            HashPersist,
             PersistRestore,
             Count,
         }
@@ -36,7 +37,7 @@ macro_rules! quickcheck_map {
         impl Arbitrary for Op {
             fn arbitrary<G: Gen>(g: &mut G) -> Op {
                 let k: u8 = g.gen_range(0, KEY_SPACE);
-                let op = g.gen_range(0, 10);
+                let op = g.gen_range(0, 11);
                 match op {
                     0 => Op::Insert(k, g.gen()),
                     1 => Op::Get(k),
@@ -46,8 +47,9 @@ macro_rules! quickcheck_map {
                     5 => Op::Values,
                     6 => Op::ValuesMut,
                     7 => Op::Persist,
-                    8 => Op::PersistRestore,
-                    9 => Op::Count,
+                    8 => Op::HashPersist,
+                    9 => Op::PersistRestore,
+                    10 => Op::Count,
                     _ => unreachable!(),
                 }
             }
@@ -145,6 +147,11 @@ macro_rules! quickcheck_map {
                     }
                     Op::Persist => {
                         store.persist(&mut test).unwrap();
+                    }
+                    Op::HashPersist => {
+                        let root_hash = test.root_hash();
+                        let snapshot = store.persist(&mut test).unwrap();
+                        assert_eq!(&root_hash, snapshot.hash(),)
                     }
                     Op::PersistRestore => {
                         let snapshot = store.persist(&mut test).unwrap();

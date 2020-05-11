@@ -74,7 +74,7 @@ where
 }
 
 /// Empty annotation
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct VoidAnnotation;
 
 impl<T> From<&T> for VoidAnnotation {
