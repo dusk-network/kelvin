@@ -9,4 +9,4 @@ keywords = ["datastructure", "kelvin"]
 version = "0.8.0"
 
 [dependencies]
-kelvin = { path = "../..", version = "0.12" }
+kelvin = { path = "../..", version = "0.13" }
