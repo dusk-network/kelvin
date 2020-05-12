@@ -202,7 +202,7 @@ where
         match self {
             HandleInner::Leaf(ref l) => HandleInner::Leaf(l.clone()),
             HandleInner::Node(ref n, ref ann, ref cached) => {
-                HandleInner::Node(n.clone(), ann.clone(), cached.clone())
+                HandleInner::Node(n.clone(), ann.clone(), *cached)
             }
             HandleInner::Persisted(ref snap, ref ann) => {
                 HandleInner::Persisted(snap.clone(), ann.clone())

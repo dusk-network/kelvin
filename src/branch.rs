@@ -10,6 +10,7 @@ use crate::search::Method;
 
 /// A branch into a `Compound<H>`
 /// The Branch is guaranteed to always point to a leaf
+#[derive(Debug)]
 pub struct Branch<'a, C, H>(RawBranch<'a, C, H>);
 
 impl<'a, C, H> Branch<'a, C, H>
@@ -74,6 +75,7 @@ where
 
 /// A mutable branch into a `Compound<H>`
 /// The BranchMut is guaranteed to always point to a leaf
+#[derive(Debug)]
 pub struct BranchMut<'a, C, H>(RawBranch<'a, C, H>)
 where
     C: Compound<H>,
@@ -116,6 +118,16 @@ where
         } else {
             None
         })
+    }
+
+    /// Returns a reference to the levels of the branch
+    pub fn levels(&self) -> &[Level<'a, C, H>] {
+        self.0.levels()
+    }
+
+    /// Returns a reference to the levels of the branch
+    pub fn levels_mut(&mut self) -> &mut [Level<'a, C, H>] {
+        self.0.levels_mut()
     }
 }
 

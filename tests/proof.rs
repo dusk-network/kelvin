@@ -56,24 +56,21 @@ where
 
 #[test]
 fn merkle_proof() {
+    use kelvin::Proof;
+
     let mut hamt = HAMT::<_, _, HashAnnotation, Blake2b>::new();
 
-    for i in 0..1024 {
+    for i in 0..32 {
         hamt.insert(i, i).unwrap();
     }
-    // make a proof that (42, 42) is in the hamt
+    // make a proof that (0, 0) is in the hamt
 
-    if let Some(branch) = hamt.search(&mut HAMTSearch::from(&42)).unwrap() {
-        let levels = branch.levels();
+    let mut proof = {
+        let mut branch =
+            hamt.search_mut(&mut HAMTSearch::from(&0)).unwrap().unwrap();
 
-        for (i, level) in levels.iter().enumerate() {
-            println!("level {}", i);
-            for child in level.children() {
-                println!("  {:?}", child.annotation())
-            }
-        }
-    }
+        Proof::new(&mut branch)
+    };
 
-    // This is weird, unless hamt is referenced again, the borrow checker freaks out?
-    let _ = hamt;
+    assert!(proof.valid(&mut hamt));
 }
