@@ -237,7 +237,15 @@ where
                         // Create new sink sharing the store, either with the cached
                         // hash or post-hashing
                         let mut sub_sink = match *cached {
-                            Some(c) => Sink::new_cached(c, store),
+                            Some(hash) => {
+                                debug_assert!({
+                                    let mut sub_sink = Sink::new_dry();
+                                    Rc::make_mut(node)
+                                        .persist(&mut sub_sink)?;
+                                    sub_sink.fin()? == hash
+                                });
+                                Sink::new_cached(hash, store)
+                            }
                             None => Sink::new(store),
                         };
 
@@ -255,7 +263,15 @@ where
                     None => {
                         // No store, we're doing a dry run
                         let hash = match *cached {
-                            Some(hash) => hash,
+                            Some(hash) => {
+                                debug_assert!({
+                                    let mut sub_sink = Sink::new_dry();
+                                    Rc::make_mut(node)
+                                        .persist(&mut sub_sink)?;
+                                    sub_sink.fin()? == hash
+                                });
+                                hash
+                            }
                             None => {
                                 let mut sub_sink = Sink::new_dry();
                                 Rc::make_mut(node).persist(&mut sub_sink)?;
@@ -372,6 +388,17 @@ where
             HandleInner::None => HandleType::None,
             HandleInner::Leaf(_) => HandleType::Leaf,
             _ => HandleType::Node,
+        }
+    }
+
+    pub(crate) fn node_hash(&mut self) -> Option<H::Digest> {
+        match self.0 {
+            HandleInner::None => None,
+            HandleInner::Leaf(_) => None,
+            HandleInner::Node(ref mut n, ..) => {
+                Some(Rc::make_mut(n).root_hash())
+            }
+            HandleInner::Persisted(ref hash, ..) => Some(*hash.hash()),
         }
     }
 

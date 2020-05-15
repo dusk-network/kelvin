@@ -18,15 +18,6 @@ where
     fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()>;
     /// Restore the type from a `Source`
     fn restore(source: &mut Source<H>) -> io::Result<Self>;
-
-    /// Returns the hash of the Content type.
-    /// This does not write anything to disk, the hashes are simply recursively
-    /// computed and cached
-    fn root_hash(&mut self) -> H::Digest {
-        let mut sink = Sink::new_dry();
-        self.persist(&mut sink).expect("Dry run");
-        sink.fin().expect("Dry run")
-    }
 }
 
 impl<T: Content<H>, H: ByteHash> Content<H> for Option<T> {

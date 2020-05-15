@@ -1,4 +1,4 @@
-use kelvin::{Blake2b, Compound, Content, Store, VoidAnnotation};
+use kelvin::{Blake2b, Compound, Store, VoidAnnotation};
 use kelvin_hamt::HAMT;
 
 #[test]

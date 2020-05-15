@@ -6,6 +6,7 @@ use crate::branch::{Branch, BranchMut};
 use crate::content::Content;
 use crate::handle::Handle;
 use crate::search::Method;
+use crate::sink::Sink;
 
 /// A trait for tree-like structures containing leaves
 pub trait Compound<H>: Content<H> + Default
@@ -48,5 +49,14 @@ where
         m: &mut M,
     ) -> io::Result<Option<BranchMut<Self, H>>> {
         BranchMut::new(self, m)
+    }
+
+    /// Returns the hash of the Content type.
+    /// This does not write anything to disk, the hashes are simply recursively
+    /// computed and cached
+    fn root_hash(&mut self) -> H::Digest {
+        let mut sink = Sink::new_dry();
+        self.persist(&mut sink).expect("Dry run");
+        sink.fin().expect("Dry run")
     }
 }
