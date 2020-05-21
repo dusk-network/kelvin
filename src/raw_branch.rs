@@ -16,6 +16,7 @@ pub enum Found {
     None,
 }
 
+#[derive(Debug)]
 enum NodeRef<'a, C, H> {
     Cached(Cached<'a, C>),
     Mutable(&'a mut C),
@@ -24,6 +25,7 @@ enum NodeRef<'a, C, H> {
 }
 
 /// Represents a level in a branch
+#[derive(Debug)]
 pub struct Level<'a, C, H> {
     ofs: usize,
     node: NodeRef<'a, C, H>,
@@ -41,6 +43,17 @@ where
     }
 }
 
+impl<'a, C, H> DerefMut for Level<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.node
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct RawBranch<'a, C, H> {
     levels: Vec<Level<'a, C, H>>,
     exact: bool,
@@ -352,8 +365,12 @@ where
         }
     }
 
-    pub fn levels(&self) -> &[Level<'a, C, H>] {
+    pub(crate) fn levels(&self) -> &[Level<'a, C, H>] {
         &self.levels
+    }
+
+    pub(crate) fn levels_mut(&mut self) -> &mut [Level<'a, C, H>] {
+        &mut self.levels
     }
 
     fn pop_level(&mut self) -> bool {
