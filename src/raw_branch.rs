@@ -347,8 +347,12 @@ where
     }
 
     pub fn leaf(&self) -> Option<&C::Leaf> {
-        if let Some(last) = self.levels.last() {
-            last.leaf()
+        if self.exact {
+            if let Some(last) = self.levels.last() {
+                last.leaf()
+            } else {
+                None
+            }
         } else {
             None
         }

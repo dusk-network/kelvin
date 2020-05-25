@@ -3,8 +3,7 @@ use std::io;
 
 use bytehash::ByteHash;
 
-pub use cardinality::{Cardinality, Count, Counter};
-
+pub use cardinality::{Cardinality, Count, Counter, Nth};
 pub use max_key::{MaxKey, MaxKeyType};
 
 use crate::{Content, Sink, Source};

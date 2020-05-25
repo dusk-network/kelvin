@@ -28,6 +28,7 @@ where
     {
         let mut inner = RawBranch::new_cached(Cached::Borrowed(node));
         inner.search(method)?;
+
         Ok(if inner.leaf().is_some() {
             Some(Branch(inner))
         } else {
