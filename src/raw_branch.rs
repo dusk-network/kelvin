@@ -347,21 +347,21 @@ where
     }
 
     pub fn leaf(&self) -> Option<&C::Leaf> {
-        if let Some(last) = self.levels.last() {
-            last.leaf()
+        if self.exact {
+            self.levels.last()?.leaf()
         } else {
             None
         }
     }
 
     pub(crate) fn leaf_mut(&mut self) -> Option<&'a mut C::Leaf> {
-        unsafe {
-            let unsafe_self: &'a mut Self = mem::transmute(self);
-            if let Some(last) = unsafe_self.levels.last_mut() {
-                last.leaf_mut()
-            } else {
-                None
+        if self.exact {
+            unsafe {
+                let unsafe_self: &'a mut Self = mem::transmute(self);
+                unsafe_self.levels.last_mut()?.leaf_mut()
             }
+        } else {
+            None
         }
     }
 

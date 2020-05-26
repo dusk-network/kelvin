@@ -1,5 +1,7 @@
 mod fuzz;
 mod quickcheck_map;
+mod quickcheck_stack;
+
 use crate::{ByteHash, Compound, HandleType};
 pub use fuzz::{fuzz_content, fuzz_content_iterations};
 pub use quickcheck;
