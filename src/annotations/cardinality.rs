@@ -7,6 +7,7 @@ use bytehash::ByteHash;
 use num::{One, Zero};
 
 use super::Associative;
+use crate::branch::Branch;
 use crate::handle::HandleType;
 use crate::search::{Method, SearchResult};
 use crate::{Compound, Content, Sink, Source};
@@ -107,19 +108,35 @@ where
                 HandleType::Node => {
                     if let Some(annotation) = child.annotation() {
                         let c: &Cardinality<U> = (*annotation).borrow();
-                        if self.0 > c.0 {
+                        if self.0 >= c.0 {
                             self.0 -= c.0
                         } else {
                             return SearchResult::Path(i);
                         }
                     }
                 }
-                HandleType::None => {
-                    return SearchResult::None;
-                }
+                HandleType::None => (),
             }
         }
         // found nothing
         SearchResult::None
+    }
+}
+
+/// Trait for finding the nth element of a collection
+pub trait GetNth<U, H>: Sized {
+    /// Returns a branch to the n:th element, if any
+    fn nth(&self, i: U) -> io::Result<Option<Branch<Self, H>>>;
+}
+
+impl<C, U, H> GetNth<U, H> for C
+where
+    C: Compound<H>,
+    C::Annotation: Borrow<Cardinality<U>>,
+    U: Counter,
+    H: ByteHash,
+{
+    fn nth(&self, i: U) -> io::Result<Option<Branch<Self, H>>> {
+        Branch::new(self, &mut Nth::new(i))
     }
 }
