@@ -9,4 +9,4 @@ description = "HAMT Data structure"
 license = "MPL-2.0"
 
 [dependencies]
-kelvin = { path = "../..", version = "0.15" }
+kelvin = { path = "../..", version = "0.16" }

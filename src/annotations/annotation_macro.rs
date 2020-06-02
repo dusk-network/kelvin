@@ -1,19 +1,27 @@
 /// Conveniance macro for creating annotation types combining several annotations
 #[macro_export]
 macro_rules! annotation {
-    {  $pub:vis struct $struct_name:ident $( < $( $param:ident ),* > )*
-       {
-           $( $ann_key:ident : $ann_type:ty ),* $( , )?
-
-       }
-       $( where $( $whereclause:tt )* )?
+    {
+        $(#[$outer:meta])*
+        $pub:vis struct $struct_name:ident $( < $( $param:ident ),* > )*
+        {
+            $( $ann_key:ident : $ann_type:ty ),* $( , )?
+        }
+        $( where $( $whereclause:tt )* )?
 
     } => {
 
         use std::borrow::Borrow as __Borrow;
         use $crate::annotations::ErasedAnnotation as __ErasedAnnotation;
         use $crate::annotations::Combine as __Combine;
+        use $crate::{
+            Content as __Content,
+            Sink as __Sink,
+            Source as __Source,
+            ByteHash as __ByteHash
+        };
 
+        $(#[$outer])*
         $pub struct $struct_name $( < $( $param ),* > )* {
             $ ( $ann_key : $ann_type ),*
         }
@@ -32,21 +40,21 @@ macro_rules! annotation {
             }
         }
 
-        impl<__H, $( $( $param ),* )* > Content<__H> for $struct_name $( < $( $param ),* > )*
+        impl<__H, $( $( $param ),* )* > __Content<__H> for $struct_name $( < $( $param ),* > )*
         where
-            __H: ByteHash,
-            $( $ann_type : Content<__H> ),*
+            __H: __ByteHash,
+            $( $ann_type : __Content<__H> ),*
             $( , $( $whereclause )* )?
 
         {
-            fn persist(&mut self, sink: &mut Sink<__H>) -> io::Result<()> {
+            fn persist(&mut self, sink: &mut __Sink<__H>) -> io::Result<()> {
                 $( self.$ann_key.persist(sink)? ; )*
                 Ok(())
             }
 
-            fn restore(source: &mut Source<__H>) -> io::Result<Self> {
+            fn restore(source: &mut __Source<__H>) -> io::Result<Self> {
                 Ok($struct_name {
-                    $( $ann_key : < $ann_type as Content<__H> >::restore(source)? , )*
+                    $( $ann_key : < $ann_type as __Content<__H> >::restore(source)? , )*
                 })
 
             }
