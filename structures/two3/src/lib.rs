@@ -193,16 +193,17 @@ where
             SearchResult::Leaf(i) => {
                 action = Action::Replace(i);
             }
-            SearchResult::Path(i) => match &mut *self.0[i].inner_mut()? {
-                HandleMut::None => unreachable!(),
-                HandleMut::Leaf(KV { key, val: _ }) => {
+            SearchResult::Path(i) => match self.0[i].inner_mut()? {
+                HandleMut::None(_) => unreachable!(),
+                HandleMut::Leaf(ref mut leaf) => {
+                    let KV { ref key, val: _ } = (**leaf).borrow();
                     if *key > *ann_key {
                         action = Action::Insert(i);
                     } else if i + 1 == len {
                         action = Action::Insert(i + 1);
                     }
                 }
-                HandleMut::Node(n) => {
+                HandleMut::Node(ref mut n) => {
                     let node_ann =
                         n.annotation().expect("node without annotation");
 
@@ -336,10 +337,10 @@ where
                 action = Action::Remove(i);
             }
             SearchResult::Path(i) => {
-                match &mut *self.0[i].inner_mut()? {
-                    HandleMut::None => unreachable!(),
+                match self.0[i].inner_mut()? {
+                    HandleMut::None(_) => unreachable!(),
                     HandleMut::Leaf(_) => (),
-                    HandleMut::Node(n) => {
+                    HandleMut::Node(ref mut n) => {
                         let ann =
                             n.annotation().expect("node without annotation");
                         let max_key: &MaxKey<K> = ann.borrow();
@@ -396,7 +397,7 @@ where
                 // Is there a node before this one?
                 if i > 0 {
                     // Case A/B
-                    match &mut *self.0[i - 1].inner_mut()? {
+                    match &mut self.0[i - 1].inner_mut()? {
                         HandleMut::Node(n) => {
                             if n.0.len() == N {
                                 // Case A - move from to_merge into prev node
@@ -416,8 +417,8 @@ where
                     }
                 } else {
                     // Case C/D
-                    match &mut *self.0[i + 1].inner_mut()? {
-                        HandleMut::Node(n) => {
+                    match self.0[i + 1].inner_mut()? {
+                        HandleMut::Node(ref mut n) => {
                             if n.0.len() == N {
                                 // Case C
                                 let popped = to_merge
