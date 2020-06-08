@@ -213,7 +213,7 @@ where
         } else {
             // recurse
             if let HandleMut::Node(ref mut node) =
-                *self.handles[i].inner_mut()?
+                self.handles[i].inner_mut()?
             {
                 search.trim_front(common.len());
                 node._insert(search, v)
@@ -289,7 +289,7 @@ where
             } else {
                 // recurse
                 if let HandleMut::Node(ref mut node) =
-                    *self.handles[i].inner_mut()?
+                    self.handles[i].inner_mut()?
                 {
                     search.trim_front(common.len());
                     match node._remove(search, depth + 1)? {

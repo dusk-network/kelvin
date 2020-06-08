@@ -10,8 +10,8 @@ use std::mem;
 
 use kelvin::{
     annotations::{Annotation, Cardinality, VoidAnnotation},
-    ByteHash, Compound, Content, Handle, HandleMut, HandleOwned, HandleRef,
-    HandleType, Method, SearchResult, Sink, Source, ValPath, ValPathMut, KV,
+    ByteHash, Compound, Content, Handle, HandleMut, HandleRef, HandleType,
+    Method, SearchResult, Sink, Source, ValPath, ValPathMut, KV,
 };
 
 /// Default HAMT-map without annotations
@@ -90,10 +90,10 @@ where
             Replace,
         }
 
-        let action = match &mut *self.children_mut()[s].inner_mut()? {
-            HandleMut::None => Action::Insert,
-            HandleMut::Leaf(leaf) => {
-                let KV { key, val: _ } = (**leaf).borrow();
+        let action = match self.children_mut()[s].inner_mut()? {
+            HandleMut::None(_) => Action::Insert,
+            HandleMut::Leaf(ref mut leaf) => {
+                let KV { ref key, val: _ } = (**leaf).borrow();
 
                 if key == &k {
                     Action::Replace
@@ -101,7 +101,7 @@ where
                     Action::Split
                 }
             }
-            HandleMut::Node(node) => {
+            HandleMut::Node(ref mut node) => {
                 return node.sub_insert(depth + 1, h, k, v)
             }
         };
@@ -155,20 +155,21 @@ where
             let s = Self::select_slot(h.as_ref(), depth);
             let slot = &mut self.children_mut()[s];
 
-            let mut collapse = None;
-
-            match &mut *slot.inner_mut()? {
-                HandleMut::None => return Ok(Removed::None),
-                HandleMut::Leaf(leaf) => {
-                    let KV { ref key, val: _ } = (**leaf).borrow();
+            match slot.inner_mut()? {
+                HandleMut::None(_) => return Ok(Removed::None),
+                HandleMut::Leaf(ref mut leaf) => {
+                    let KV { key, val: _ } = (**leaf).borrow();
                     if key.borrow() != k {
                         return Ok(Removed::None);
+                    } else {
+                        removed_leaf = leaf.replace(Handle::new_empty());
                     }
                 }
-                HandleMut::Node(node) => {
+                HandleMut::Node(ref mut node) => {
                     match node.sub_remove(depth + 1, h, k)? {
                         Removed::Collapse(removed, reinsert) => {
-                            collapse = Some((removed, reinsert));
+                            removed_leaf = removed.into();
+                            node.replace(Handle::new_leaf(reinsert.into()));
                         }
                         a => {
                             return Ok(a);
@@ -176,27 +177,15 @@ where
                     }
                 }
             };
-
-            // lower level collapsed
-            if let Some((removed, reinsert)) = collapse {
-                removed_leaf = removed;
-                slot.replace(HandleOwned::Leaf(reinsert.into()));
-            } else if let HandleOwned::Leaf(leaf) =
-                slot.replace(HandleOwned::None)
-            {
-                removed_leaf = leaf.into()
-            } else {
-                unreachable!()
-            }
         }
         // we might have to collapse the branch
         if depth > 0 {
             match self.remove_singleton()? {
-                Some(kv) => Ok(Removed::Collapse(removed_leaf, kv)),
-                None => Ok(Removed::Leaf(removed_leaf)),
+                Some(kv) => Ok(Removed::Collapse(removed_leaf.into(), kv)),
+                None => Ok(Removed::Leaf(removed_leaf.into())),
             }
         } else {
-            Ok(Removed::Leaf(removed_leaf))
+            Ok(Removed::Leaf(removed_leaf.into()))
         }
     }
 

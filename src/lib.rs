@@ -32,7 +32,8 @@ pub use crate::compound::Compound;
 pub use crate::content::Content;
 pub use crate::debug_draw::{DebugDraw, DrawState};
 pub use crate::handle::{
-    Handle, HandleMut, HandleOwned, HandleRef, HandleType,
+    Handle, HandleMut, HandleMutLeaf, HandleMutNode, HandleMutNone, HandleRef,
+    HandleType,
 };
 pub use crate::iter::LeafIterable;
 pub use crate::map::{ValIterable, ValPath, ValPathMut, ValRef, ValRefMut, KV};

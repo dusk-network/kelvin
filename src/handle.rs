@@ -40,23 +40,6 @@ where
     None,
 }
 
-impl<C, H> From<HandleOwned<C, H>> for HandleInner<C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    fn from(owned: HandleOwned<C, H>) -> Self {
-        match owned {
-            HandleOwned::None => HandleInner::None,
-            HandleOwned::Leaf(l) => HandleInner::Leaf(l),
-            HandleOwned::Node(c) => {
-                let ann = c.annotation().expect("Invalid empty owned node");
-                HandleInner::Node(Rc::new(c), ann, None)
-            }
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq)]
 /// Represents the type of the handle
 pub enum HandleType {
@@ -104,83 +87,22 @@ where
     None,
 }
 
-/// Struct that wraps a user-facing representation of the mutable handle
-/// while still keeping track of a raw pointer to the original handle.
-/// This is to ensure that the associated annotations are automatically
-/// updated on mutable access.
-pub struct HandleMutWrap<'a, C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    annotation: Option<&'a mut C::Annotation>,
-    inner: HandleMut<'a, C, H>,
-}
-
-impl<'a, C, H> Deref for HandleMutWrap<'a, C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    type Target = HandleMut<'a, C, H>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<'a, C, H> DerefMut for HandleMutWrap<'a, C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-impl<'a, C, H> Drop for HandleMutWrap<'a, C, H>
+impl<'a, C, H> Drop for HandleMut<'a, C, H>
 where
     C: Compound<H>,
     H: ByteHash,
 {
     fn drop(&mut self) {
-        if let (Some(ref mut ann), HandleMut::Node(ref node)) =
-            (self.annotation.as_mut(), &self.inner)
-        {
-            if let Some(annotation) = node.annotation() {
-                ***ann = annotation
+        if let HandleMut::Node(nodewrap) = self {
+            if let HandleInner::Node(c, ann, cached) = nodewrap.inner {
+                // clear cached hash
+                *cached = None;
+                if let Some(annotation) = c.annotation() {
+                    *ann = annotation
+                }
             }
         }
     }
-}
-
-/// User facing mutable reference to a handle
-pub enum HandleMut<'a, C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    /// Handle points at a Leaf
-    Leaf(&'a mut C::Leaf),
-    /// Handle points at a Node
-    Node(&'a mut C),
-    /// Handle points at nothing
-    None,
-}
-
-/// An owned handle
-pub enum HandleOwned<C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    /// Owned Leaf
-    Leaf(C::Leaf),
-    /// Owned Node
-    Node(C),
-    /// None
-    None,
 }
 
 impl<C, H> Default for Handle<C, H>
@@ -313,6 +235,145 @@ where
     }
 }
 
+/// A mutable reference to an empty `Handle`
+pub struct HandleMutNone<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    inner: &'a mut HandleInner<C, H>,
+}
+
+/// A mutable reference to a `Handle` containing a leaf
+pub struct HandleMutLeaf<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    inner: &'a mut HandleInner<C, H>,
+}
+
+/// A mutable reference to a `Handle` containing a node
+pub struct HandleMutNode<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    inner: &'a mut HandleInner<C, H>,
+}
+
+impl<'a, C, H> Deref for HandleMutNode<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    type Target = C;
+
+    fn deref(&self) -> &Self::Target {
+        match self.inner {
+            HandleInner::Node(ref n, _, _) => n,
+            _ => panic!("invalid deref after replace"),
+        }
+    }
+}
+
+impl<'a, C, H> DerefMut for HandleMutNode<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self.inner {
+            HandleInner::Node(ref mut node, _, _) => Rc::make_mut(node),
+            _ => panic!("invalid deref after replace"),
+        }
+    }
+}
+
+impl<'a, C, H> Deref for HandleMutLeaf<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    type Target = C::Leaf;
+
+    fn deref(&self) -> &Self::Target {
+        match self.inner {
+            HandleInner::Leaf(ref leaf) => leaf,
+            _ => panic!("invalid deref after replace"),
+        }
+    }
+}
+
+impl<'a, C, H> DerefMut for HandleMutLeaf<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self.inner {
+            HandleInner::Leaf(ref mut leaf) => leaf,
+            _ => panic!("invalid deref after replace"),
+        }
+    }
+}
+
+impl<'a, C, H> HandleMutNode<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    /// Replaces the node with `handle`
+    /// Invalidates the `HandleMutNone` if `handle` is not a node.
+    pub fn replace(&mut self, handle: Handle<C, H>) -> Rc<C> {
+        match mem::replace(self.inner, handle.0) {
+            HandleInner::Node(n, _, _) => n,
+            _ => panic!("multiple incompatible replaces"),
+        }
+    }
+}
+
+impl<'a, C, H> HandleMutLeaf<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    /// Replaces the leaf with `handle`
+    /// Invalidates the `HandleMutNone` if `handle` is not None.
+    pub fn replace(&mut self, handle: Handle<C, H>) -> C::Leaf {
+        match mem::replace(self.inner, handle.0) {
+            HandleInner::Leaf(l) => l,
+            _ => panic!("multiple incompatible replaces"),
+        }
+    }
+}
+
+impl<'a, C, H> HandleMutNone<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    /// Replaces the empty node with `handle`
+    /// Invalidates the `HandleMutNone` if `handle` is not None.
+    pub fn replace(&mut self, handle: Handle<C, H>) {
+        *self.inner = handle.0
+    }
+}
+
+/// A mutable reference to a handle
+pub enum HandleMut<'a, C, H>
+where
+    C: Compound<H>,
+    H: ByteHash,
+{
+    /// Mutable handle pointing at a leaf
+    Leaf(HandleMutLeaf<'a, C, H>),
+    /// Mutable handle pointing at a node
+    Node(HandleMutNode<'a, C, H>),
+    /// Mutable handle pointing at an empty slot
+    None(HandleMutNone<'a, C, H>),
+}
+
 impl<C, H> Handle<C, H>
 where
     C: Compound<H>,
@@ -429,36 +490,17 @@ where
         })
     }
 
-    /// Replace the inner node
-    pub fn replace(&mut self, with: HandleOwned<C, H>) -> HandleOwned<C, H> {
-        match mem::replace(&mut self.0, with.into()) {
-            HandleInner::None => HandleOwned::None,
-            HandleInner::Leaf(l) => HandleOwned::Leaf(l),
-            HandleInner::Node(c, _, _) => {
-                HandleOwned::Node(c.unwrap_or_clone())
+    /// Returns a mutable reference to the `Handle` as `HandleMut`
+    pub fn inner_mut(&mut self) -> io::Result<HandleMut<C, H>> {
+        match self.0 {
+            HandleInner::None => {
+                Ok(HandleMut::None(HandleMutNone { inner: &mut self.0 }))
             }
-            _ => unreachable!("Mutable handles cannot be persisted or shared"),
-        }
-    }
-
-    /// Get a wrapped mutable reference to the inner node
-    pub fn inner_mut(&mut self) -> io::Result<HandleMutWrap<C, H>> {
-        Ok(match self.0 {
-            HandleInner::None => HandleMutWrap {
-                annotation: None,
-                inner: HandleMut::None,
-            },
-            HandleInner::Leaf(ref mut l) => HandleMutWrap {
-                annotation: None,
-                inner: HandleMut::Leaf(l),
-            },
-            HandleInner::Node(ref mut n, ref mut ann, ref mut cached) => {
-                // Clear cached hash
-                *cached = None;
-                HandleMutWrap {
-                    annotation: Some(ann),
-                    inner: HandleMut::Node(&mut *Rc::make_mut(n)),
-                }
+            HandleInner::Leaf(_) => {
+                Ok(HandleMut::Leaf(HandleMutLeaf { inner: &mut self.0 }))
+            }
+            HandleInner::Node(..) => {
+                Ok(HandleMut::Node(HandleMutNode { inner: &mut self.0 }))
             }
             HandleInner::Persisted(_, _) => {
                 if let HandleInner::Persisted(snap, ann) =
@@ -467,12 +509,12 @@ where
                     let restored = snap.restore()?;
                     *self =
                         Handle(HandleInner::Node(Rc::new(restored), ann, None));
-                    return self.inner_mut();
+                    self.inner_mut()
                 } else {
                     unreachable!()
                 }
             }
-        })
+        }
     }
 }
 
