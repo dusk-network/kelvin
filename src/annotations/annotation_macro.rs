@@ -26,35 +26,35 @@ macro_rules! annotation {
             $ ( $ann_key : $ann_type ),*
         }
 
-        impl<__T, $( $( $param ),* )* > From<__T> for $struct_name $( < $( $param ),* > )*
+        impl<'a, T, $( $( $param ),* )* > From<&'a T> for $struct_name $( < $( $param ),* > )*
         where
-            __T: Clone,
-            $( $ann_type : From<__T> ),*
+            T: Clone,
+            $( for<'any> &'any T: Into<$ann_type> ),*
             $( , $( $whereclause )* )?
 
         {
-            fn from(t: __T) -> Self {
+            fn from(t: &T) -> Self {
                 $struct_name {
-                    $( $ann_key : t.clone().into() ),*
+                    $( $ann_key : t.into() ),*
                 }
             }
         }
 
-        impl<__H, $( $( $param ),* )* > __Content<__H> for $struct_name $( < $( $param ),* > )*
+        impl<H, $( $( $param ),* )* > __Content<H> for $struct_name $( < $( $param ),* > )*
         where
-            __H: __ByteHash,
-            $( $ann_type : __Content<__H> ),*
+            H: __ByteHash,
+            $( $ann_type : __Content<H> ),*
             $( , $( $whereclause )* )?
 
         {
-            fn persist(&mut self, sink: &mut __Sink<__H>) -> io::Result<()> {
+            fn persist(&mut self, sink: &mut __Sink<H>) -> io::Result<()> {
                 $( self.$ann_key.persist(sink)? ; )*
                 Ok(())
             }
 
-            fn restore(source: &mut __Source<__H>) -> io::Result<Self> {
+            fn restore(source: &mut __Source<H>) -> io::Result<Self> {
                 Ok($struct_name {
-                    $( $ann_key : < $ann_type as __Content<__H> >::restore(source)? , )*
+                    $( $ann_key : < $ann_type as __Content<H> >::restore(source)? , )*
                 })
 
             }
@@ -73,14 +73,14 @@ macro_rules! annotation {
             }
         }
 
-        impl<__A, $( $( $param ),* )* > __Combine<__A> for $struct_name $( < $( $param ),* > )*
+        impl<A, $( $( $param ),* )* > __Combine<A> for $struct_name $( < $( $param ),* > )*
         where
-            $( __A: __Borrow<$ann_type> ),* ,
+            $( A: __Borrow<$ann_type> ),* ,
             $( $( $whereclause )* )?
         {
-            fn combine<__E>(elements: &[__E] ) -> Option<Self>     where
-                __A: __Borrow<Self> + Clone,
-                __E: __ErasedAnnotation<__A> {
+            fn combine<E>(elements: &[E] ) -> Option<Self>     where
+                A: __Borrow<Self> + Clone,
+                E: __ErasedAnnotation<A> {
                 Some($struct_name {
                     $(
                         $ann_key : if let Some(combined) = < $ann_type >::combine(elements) {
