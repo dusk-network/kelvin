@@ -9,7 +9,7 @@ mod nibbles;
 use nibbles::{AsNibbles, NibbleBuf, Nibbles};
 
 use kelvin::{
-    annotations::{Annotation, VoidAnnotation},
+    annotations::{Annotation, Void},
     ByteHash, Compound, Content, Handle, HandleMut, HandleType, Method,
     SearchResult, Sink, Source, ValPath, ValPathMut,
 };
@@ -19,7 +19,7 @@ const N_BUCKETS: usize = 17;
 const MAX_KEY_LEN: usize = core::u16::MAX as usize / 2;
 
 /// Default unannotated Radix trie
-pub type DefaultRadixMap<K, V, H> = Radix<K, V, VoidAnnotation, H>;
+pub type DefaultRadixMap<K, V, H> = Radix<K, V, Void, H>;
 
 /// A Prefix tree
 pub struct Radix<K, V, A, H>
@@ -414,7 +414,7 @@ mod test {
 
     #[test]
     fn trivial_map() {
-        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, Blake2b>::new();
         h.insert(String::from("hello"), String::from("world"))
             .unwrap();
         assert_eq!(*h.get("hello").unwrap().unwrap(), "world");
@@ -422,7 +422,7 @@ mod test {
 
     #[test]
     fn bigger_map() {
-        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, Blake2b>::new();
         for i in 0u16..1024 {
             let b = i.to_be_bytes();
             assert_eq!(h.insert(b, i).unwrap(), None);
@@ -433,7 +433,7 @@ mod test {
 
     #[test]
     fn insert_remove() {
-        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, Blake2b>::new();
         let n = 1024;
         for i in 0u16..n {
             let b = i.to_be_bytes();
@@ -457,7 +457,7 @@ mod test {
             keys[i as usize] = key;
         }
 
-        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, Blake2b>::new();
         for key in keys.iter() {
             let b = key.to_be_bytes();
             h.insert(b, *key).unwrap();
@@ -481,7 +481,7 @@ mod test {
             "",
         ];
 
-        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, Blake2b>::new();
 
         for i in 0..keys.len() {
             h.insert(keys[i], i as u16).unwrap();
@@ -494,7 +494,7 @@ mod test {
 
     #[test]
     fn splitting() {
-        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, Blake2b>::new();
         h.insert(vec![0x00, 0x00], 0).unwrap();
         assert_eq!(h.insert(vec![0x00, 0x00], 0).unwrap(), Some(0));
         h.insert(vec![0x00, 0x10], 8).unwrap();
@@ -505,7 +505,7 @@ mod test {
 
     #[test]
     fn borrowed_keys() {
-        let mut map = Radix::<String, u8, VoidAnnotation, Blake2b>::new();
+        let mut map = Radix::<String, u8, Void, Blake2b>::new();
         map.insert("hello".into(), 8).unwrap();
         assert_eq!(*map.get("hello").unwrap().unwrap(), 8);
         assert_eq!(map.remove("hello").unwrap().unwrap(), 8);
@@ -513,7 +513,7 @@ mod test {
 
     #[test]
     fn collapse() {
-        let mut h = Radix::<_, _, VoidAnnotation, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, Blake2b>::new();
         h.insert(vec![0x00, 0x00], 0).unwrap();
         h.insert(vec![0x00, 0x10], 0).unwrap();
 

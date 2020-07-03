@@ -9,13 +9,13 @@ use std::marker::PhantomData;
 use std::mem;
 
 use kelvin::{
-    annotations::{Annotation, Cardinality, VoidAnnotation},
+    annotations::{Annotation, Cardinality, Void},
     ByteHash, Compound, Content, Handle, HandleMut, HandleRef, HandleType,
     Method, SearchResult, Sink, Source, ValPath, ValPathMut, KV,
 };
 
 /// Default HAMT-map without annotations
-pub type DefaultHAMTMap<K, V, H> = HAMT<K, V, VoidAnnotation, H>;
+pub type DefaultHAMTMap<K, V, H> = HAMT<K, V, Void, H>;
 /// Default HAMT-map with Cardinality annotation (for `.count()`)
 pub type CountingHAMTMap<K, V, H> = HAMT<K, V, Cardinality<u64>, H>;
 
@@ -575,19 +575,18 @@ where
 mod test {
     use super::*;
 
-    use kelvin::quickcheck_map;
-    use kelvin::Blake2b;
+    use kelvin::{quickcheck_map, Blake2b, Erased, Store};
 
     #[test]
     fn trivial_map() {
-        let mut h = HAMT::<_, _, VoidAnnotation, Blake2b>::new();
+        let mut h = HAMT::<_, _, Void, Blake2b>::new();
         h.insert(28, 28).unwrap();
         assert_eq!(*h.get(&28).unwrap().unwrap(), 28);
     }
 
     #[test]
     fn bigger_map() {
-        let mut h = HAMT::<_, _, VoidAnnotation, Blake2b>::new();
+        let mut h = HAMT::<_, _, Void, Blake2b>::new();
         for i in 0..1024 {
             assert!(h.get(&i).unwrap().is_none());
             h.insert(i, i).unwrap();
@@ -597,17 +596,47 @@ mod test {
 
     #[test]
     fn borrowed_keys() {
-        let mut map = HAMT::<String, u8, VoidAnnotation, Blake2b>::new();
+        let mut map = HAMT::<String, u8, Void, Blake2b>::new();
         map.insert("hello".into(), 8).unwrap();
         assert_eq!(*map.get("hello").unwrap().unwrap(), 8);
         assert_eq!(map.remove("hello").unwrap().unwrap(), 8);
     }
 
     #[test]
+    fn erased() {
+        let store = Store::<Blake2b>::ephemeral();
+
+        let mut hamt = DefaultHAMTMap::new();
+
+        for i in 0u32..128 {
+            hamt.insert(i, i).unwrap();
+        }
+
+        let mut erased = Erased::wrap(hamt, &store).unwrap();
+        let query =
+            erased.query::<DefaultHAMTMap<u32, u32, Blake2b>>().unwrap();
+
+        assert_eq!(*query.get(&37).unwrap().unwrap(), 37);
+
+        let mut transaction = erased
+            .transaction::<DefaultHAMTMap<u32, u32, Blake2b>>()
+            .unwrap();
+
+        transaction.insert(0, 1234).unwrap();
+        transaction.commit().unwrap();
+
+        let second_query =
+            erased.query::<DefaultHAMTMap<u32, u32, Blake2b>>().unwrap();
+
+        assert_eq!(*query.get(&0).unwrap().unwrap(), 0);
+        assert_eq!(*second_query.get(&0).unwrap().unwrap(), 1234);
+    }
+
+    #[test]
     fn nested_maps() {
-        let mut map_a = HAMT::<_, _, VoidAnnotation, Blake2b>::new();
+        let mut map_a = HAMT::<_, _, Void, Blake2b>::new();
         for i in 0..128 {
-            let mut map_b = HAMT::<_, _, VoidAnnotation, Blake2b>::new();
+            let mut map_b = HAMT::<_, _, Void, Blake2b>::new();
 
             for o in 0..128 {
                 map_b.insert(o, o).unwrap();

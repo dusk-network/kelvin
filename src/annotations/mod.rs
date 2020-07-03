@@ -74,23 +74,23 @@ where
 
 /// Empty annotation
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct VoidAnnotation;
+pub struct Void;
 
-impl<T> From<&T> for VoidAnnotation {
+impl<T> From<&T> for Void {
     fn from(_: &T) -> Self {
-        VoidAnnotation
+        Void
     }
 }
 
-impl Associative for VoidAnnotation {
+impl Associative for Void {
     fn op(&mut self, _: &Self) {}
 }
 
-impl<H: ByteHash> Content<H> for VoidAnnotation {
+impl<H: ByteHash> Content<H> for Void {
     fn persist(&mut self, _: &mut Sink<H>) -> io::Result<()> {
         Ok(())
     }
     fn restore(_: &mut Source<H>) -> io::Result<Self> {
-        Ok(VoidAnnotation)
+        Ok(Void)
     }
 }

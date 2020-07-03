@@ -12,6 +12,7 @@ mod branch;
 mod compound;
 mod content;
 mod debug_draw;
+mod erased;
 mod handle;
 mod iter;
 mod map;
@@ -24,13 +25,14 @@ mod source;
 mod store;
 
 pub use crate::annotations::{
-    Annotation, Associative, Combine, ErasedAnnotation, VoidAnnotation,
+    Annotation, Associative, Combine, ErasedAnnotation, Void,
 };
 pub use crate::backend::Backend;
 pub use crate::branch::{Branch, BranchMut};
 pub use crate::compound::Compound;
 pub use crate::content::Content;
 pub use crate::debug_draw::{DebugDraw, DrawState};
+pub use crate::erased::{Erased, Query, Transaction};
 pub use crate::handle::{
     Handle, HandleMut, HandleMutLeaf, HandleMutNode, HandleMutNone, HandleRef,
     HandleType,

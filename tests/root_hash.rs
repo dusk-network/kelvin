@@ -1,9 +1,9 @@
-use kelvin::{Blake2b, Compound, Store, VoidAnnotation};
+use kelvin::{Blake2b, Compound, Store, Void};
 use kelvin_hamt::HAMT;
 
 #[test]
 fn root_hash() {
-    let mut hamt = HAMT::<_, _, VoidAnnotation, Blake2b>::new();
+    let mut hamt = HAMT::<_, _, Void, Blake2b>::new();
 
     for i in 0..1024 {
         hamt.insert(i, i).unwrap();

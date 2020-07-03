@@ -1,11 +1,11 @@
-use kelvin::{Blake2b, Compound, VoidAnnotation, KV};
+use kelvin::{Blake2b, Compound, Void, KV};
 use kelvin_hamt::{HAMTSearch, NarrowHAMT};
 
 #[test]
 fn merkle_proof() {
     use kelvin::Proof;
 
-    let mut hamt = NarrowHAMT::<_, _, VoidAnnotation, Blake2b>::new();
+    let mut hamt = NarrowHAMT::<_, _, Void, Blake2b>::new();
 
     let n = 16;
 
