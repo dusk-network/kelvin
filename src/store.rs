@@ -61,12 +61,17 @@ impl<T: Content<H>, H: ByteHash> Snapshot<T, H> {
         &self.hash
     }
 
+    /// Unwraps the snapshot returning the hash.
+    pub fn into_hash(self) -> H::Digest {
+        self.hash
+    }
+
     pub(crate) fn as_bytes(&self) -> &[u8] {
         self.hash.as_ref()
     }
 }
 
-impl<N, H: ByteHash> Deref for Snapshot<N, H> {
+impl<T, H: ByteHash> Deref for Snapshot<T, H> {
     type Target = H::Digest;
     fn deref(&self) -> &Self::Target {
         &self.hash
