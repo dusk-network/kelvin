@@ -1,3 +1,6 @@
+// Copyright (c) DUSK NETWORK. All rights reserved.
+// Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
+
 //! A Hash-array mapped trie implemented on kelvin
 #![warn(missing_docs)]
 

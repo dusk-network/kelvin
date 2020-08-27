@@ -1,3 +1,6 @@
+// Copyright (c) DUSK NETWORK. All rights reserved.
+// Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
+
 /// Model test suite for stacks
 ///
 /// Usage example: `quickcheck_stack!(|| HAMT::new());`
