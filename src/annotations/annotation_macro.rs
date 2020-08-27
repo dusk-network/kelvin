@@ -1,3 +1,6 @@
+// Copyright (c) DUSK NETWORK. All rights reserved.
+// Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
+
 /// Conveniance macro for creating annotation types combining several annotations
 #[macro_export]
 macro_rules! annotation {
