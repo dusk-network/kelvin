@@ -6,19 +6,21 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 use appendix::Index;
-use bytehash::ByteHash;
+use canonical::Store;
 
 use crate::backend::{Backend, PutResult};
 
+struct DiskId([u8; 32]);
+
 /// A backend that stores its data in an `appendix` index, and a flat file
-pub struct DiskBackend<H: ByteHash> {
-    index: Index<H::Digest, u64>,
+pub struct DiskBackend {
+    index: Index<DiskId, u64>,
     data: File,
     data_path: PathBuf,
     data_offset: u64,
 }
 
-impl<H: ByteHash> DiskBackend<H> {
+impl<S: Store> DiskBackend<S> {
     /// Create a new DiskBackend at given path, creates a new directory if neccesary
     pub fn new<P: Into<PathBuf>>(path: P) -> io::Result<Self> {
         let dir = path.into();
@@ -51,8 +53,8 @@ impl<H: ByteHash> DiskBackend<H> {
     }
 }
 
-impl<H: ByteHash> Backend<H> for DiskBackend<H> {
-    fn get<'a>(&'a self, hash: &H::Digest) -> io::Result<Box<dyn Read + 'a>> {
+impl<S: Store> Backend<S> for DiskBackend<S> {
+    fn get<'a>(&'a self, hash: &S::Ident) -> io::Result<Box<dyn Read + 'a>> {
         match self.index.get(hash)? {
             Some(offset) => {
                 let mut file = File::open(&self.data_path)?;
@@ -65,11 +67,7 @@ impl<H: ByteHash> Backend<H> for DiskBackend<H> {
         }
     }
 
-    fn put(
-        &mut self,
-        hash: H::Digest,
-        bytes: Vec<u8>,
-    ) -> io::Result<PutResult> {
+    fn put(&mut self, hash: S::Ident, bytes: Vec<u8>) -> io::Result<PutResult> {
         if self.index.insert(hash, self.data_offset)? {
             // value already present
             Ok(PutResult::AlreadyThere)

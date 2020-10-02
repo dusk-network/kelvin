@@ -1,13 +1,15 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::io;
 use std::ops::Deref;
 
-use crate::{Associative, ByteHash, Content, Sink, Source};
+use canonical::Canon;
+use canonical_derive::Canon;
+
+use crate::Associative;
 
 /// Annotation used to keep track of minimum key in subtrees
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Canon)]
 pub struct MaxKey<K>(K);
 
 /// Trait group for keys
@@ -41,18 +43,5 @@ where
 {
     fn from(t: &T) -> Self {
         MaxKey(t.as_ref().clone())
-    }
-}
-
-impl<H: ByteHash, K: Content<H>> Content<H> for MaxKey<K>
-where
-    K: MaxKeyType,
-{
-    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
-        self.0.persist(sink)
-    }
-
-    fn restore(source: &mut Source<H>) -> io::Result<Self> {
-        Ok(MaxKey(K::restore(source)?))
     }
 }

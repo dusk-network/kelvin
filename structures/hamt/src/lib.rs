@@ -5,38 +5,62 @@
 #![warn(missing_docs)]
 
 use std::borrow::Borrow;
-use std::hash::Hash;
-use std::io;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::iter::Iterator;
 use std::marker::PhantomData;
 use std::mem;
 
+use canonical::{Canon, Store};
+use canonical_derive::Canon;
+
 use kelvin::{
     annotations::{Annotation, Cardinality, Void},
-    ByteHash, Compound, Content, Handle, HandleMut, HandleRef, HandleType,
-    Method, SearchResult, Sink, Source, ValPath, ValPathMut, KV,
+    Compound, Handle, HandleMut, HandleRef, Method, SearchResult, ValPath,
+    ValPathMut, KV,
 };
 
+fn hash<T: Hash, S: Store>(t: &T) -> S::Ident {
+    let mut ident = S::Ident::default();
+
+    // how many u64s do we fit?
+    let blocks = ident.as_ref().len() / 8;
+
+    // make sure we use an  explicit u64 for block_nr
+    for block_nr in 0..blocks as u64 {
+        let mut hasher = DefaultHasher::new();
+        // salt
+        block_nr.hash(&mut hasher);
+        t.hash(&mut hasher);
+        let bytes = hasher.finish().to_be_bytes();
+
+        let i = block_nr as usize;
+
+        ident.as_mut()[i * 8..i * 8 + 8].copy_from_slice(&bytes);
+    }
+    ident
+}
+
 /// Default HAMT-map without annotations
-pub type DefaultHAMTMap<K, V, H> = HAMT<K, V, Void, H>;
+pub type DefaultHAMTMap<K, V, S> = HAMT<K, V, Void, S>;
 /// Default HAMT-map with Cardinality annotation (for `.count()`)
-pub type CountingHAMTMap<K, V, H> = HAMT<K, V, Cardinality<u64>, H>;
+pub type CountingHAMTMap<K, V, S> = HAMT<K, V, Cardinality<u64>, S>;
 
 /// A hash array mapped trie with branching factor of 16
-#[derive(Clone)]
-pub struct HAMT<K, V, A, H>([Handle<Self, H>; 16])
+#[derive(Clone, Canon)]
+pub struct HAMT<K, V, A, S>([Handle<Self, S>; 16])
 where
-    K: Content<H>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash;
+    K: Canon<S> + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store;
 
-impl<K, V, A, H> Default for HAMT<K, V, A, H>
+impl<K, V, A, S> Default for HAMT<K, V, A, S>
 where
-    K: Content<H>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Canon<S> + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
     fn default() -> Self {
         HAMT(Default::default())
@@ -44,20 +68,20 @@ where
 }
 
 /// A hash array mapped trie with branching factor of 4
-#[derive(Clone)]
-pub struct NarrowHAMT<K, V, A, H>([Handle<Self, H>; 4])
+#[derive(Clone, Canon)]
+pub struct NarrowHAMT<K, V, A, S>([Handle<Self, S>; 4])
 where
-    K: Content<H>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash;
+    K: Canon<S> + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store;
 
-impl<K, V, A, H> Default for NarrowHAMT<K, V, A, H>
+impl<K, V, A, S> Default for NarrowHAMT<K, V, A, S>
 where
-    K: Content<H>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Canon<S> + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
     fn default() -> Self {
         NarrowHAMT(Default::default())
@@ -72,19 +96,20 @@ pub trait SlotSelect {
 }
 
 // Trait to abstract over the width of the HAMT
-trait HAMTTrait<K, V, H>: Compound<H> + Default + SlotSelect
+trait HAMTTrait<K, V, S>: Compound<S> + Default + SlotSelect
 where
-    H: ByteHash,
-    K: Eq + Hash,
+    S: Store,
+    K: Eq + Hash + Clone,
+    V: Clone,
     Self::Leaf: Borrow<KV<K, V>> + From<KV<K, V>> + Into<KV<K, V>>,
 {
     fn sub_insert(
         &mut self,
         depth: usize,
-        h: H::Digest,
+        h: S::Ident,
         k: K,
         v: V,
-    ) -> io::Result<Option<V>> {
+    ) -> Result<Option<V>, S::Error> {
         let s = Self::select_slot(h.as_ref(), depth);
 
         enum Action {
@@ -105,7 +130,9 @@ where
                 }
             }
             HandleMut::Node(ref mut node) => {
-                return node.sub_insert(depth + 1, h, k, v)
+                return node.val_mut(|node| {
+                    node.sub_insert(depth + 1, h, k.clone(), v.clone())
+                })
             }
         };
 
@@ -132,12 +159,12 @@ where
                 .into_leaf()
                 .into();
 
-                let old_h = H::hash(&key);
+                let old_h = hash::<_, S>(&key);
 
                 let mut new_node = Self::default();
                 new_node.sub_insert(depth + 1, h, k, v)?;
                 new_node.sub_insert(depth + 1, old_h, key, val)?;
-                self.children_mut()[s] = Handle::new_node(new_node);
+                self.children_mut()[s] = Handle::new_node(new_node)?;
                 None
             }
         })
@@ -146,9 +173,9 @@ where
     fn sub_remove<O>(
         &mut self,
         depth: usize,
-        h: H::Digest,
+        h: S::Ident,
         k: &O,
-    ) -> io::Result<Removed<KV<K, V>>>
+    ) -> Result<Removed<KV<K, V>>, S::Error>
     where
         O: ?Sized + Hash + Eq,
         K: Borrow<O>,
@@ -169,17 +196,17 @@ where
                     }
                 }
                 HandleMut::Node(ref mut node) => {
-                    match node.sub_remove(depth + 1, h, k)? {
+                    match node
+                        .val_mut(|node| node.sub_remove(depth + 1, h, k))?
+                    {
                         Removed::Collapse(removed, reinsert) => {
                             removed_leaf = removed.into();
                             node.replace(Handle::new_leaf(reinsert.into()));
                         }
-                        a => {
-                            return Ok(a);
-                        }
+                        a => return Ok(a),
                     }
                 }
-            };
+            }
         }
         // we might have to collapse the branch
         if depth > 0 {
@@ -192,7 +219,7 @@ where
         }
     }
 
-    fn remove_singleton(&mut self) -> io::Result<Option<KV<K, V>>> {
+    fn remove_singleton(&mut self) -> Result<Option<KV<K, V>>, S::Error> {
         let mut singleton = None;
 
         for (i, child) in self.children().iter().enumerate() {
@@ -214,26 +241,25 @@ where
 }
 
 /// Type for searching for keys in the HAMT
-pub struct HAMTSearch<'a, K, V, O, H>
+pub struct HAMTSearch<'a, K, V, O, S>
 where
     O: ?Sized,
-    H: ByteHash,
+    S: Store,
 {
-    hash: H::Digest,
+    hash: S::Ident,
     key: &'a O,
     depth: usize,
     _marker: PhantomData<(K, V)>,
 }
 
-impl<'a, K, V, O, H> From<&'a O> for HAMTSearch<'a, K, V, O, H>
+impl<'a, K, V, O, S> From<&'a O> for HAMTSearch<'a, K, V, O, S>
 where
     O: ?Sized + Hash,
-    H: ByteHash,
+    S: Store,
 {
     fn from(key: &'a O) -> Self {
-        let hash = H::hash(&key);
         HAMTSearch {
-            hash,
+            hash: hash::<_, S>(&key),
             key,
             depth: 0,
             _marker: PhantomData,
@@ -241,19 +267,19 @@ where
     }
 }
 
-impl<'a, K, V, A, O, H> Method<HAMT<K, V, A, H>, H>
-    for HAMTSearch<'a, K, V, O, H>
+impl<'a, K, V, A, O, S> Method<HAMT<K, V, A, S>, S>
+    for HAMTSearch<'a, K, V, O, S>
 where
-    HAMT<K, V, A, H>: SlotSelect,
-    K: Borrow<O> + Content<H> + Eq + Hash,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
+    HAMT<K, V, A, S>: SlotSelect,
+    K: Borrow<O> + Canon<S> + Eq + Hash + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
     O: ?Sized + Eq,
-    H: ByteHash,
+    S: Store,
 {
     fn select(
         &mut self,
-        compound: &HAMT<K, V, A, H>,
+        compound: &HAMT<K, V, A, S>,
         _: usize,
     ) -> SearchResult {
         let slot = HAMT::select_slot(self.hash.as_ref(), self.depth);
@@ -267,19 +293,19 @@ where
     }
 }
 
-impl<'a, K, V, A, O, H> Method<NarrowHAMT<K, V, A, H>, H>
-    for HAMTSearch<'a, K, V, O, H>
+impl<'a, K, V, A, O, S> Method<NarrowHAMT<K, V, A, S>, S>
+    for HAMTSearch<'a, K, V, O, S>
 where
-    NarrowHAMT<K, V, A, H>: SlotSelect,
-    K: Borrow<O> + Content<H> + Eq + Hash,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
+    NarrowHAMT<K, V, A, S>: SlotSelect,
+    K: Borrow<O> + Canon<S> + Eq + Hash + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
     O: ?Sized + Eq,
-    H: ByteHash,
+    S: Store,
 {
     fn select(
         &mut self,
-        compound: &NarrowHAMT<K, V, A, H>,
+        compound: &NarrowHAMT<K, V, A, S>,
         _: usize,
     ) -> SearchResult {
         let slot = NarrowHAMT::select_slot(self.hash.as_ref(), self.depth);
@@ -299,30 +325,30 @@ enum Removed<L> {
     Collapse(L, L),
 }
 
-impl<K, V, A, H> HAMTTrait<K, V, H> for HAMT<K, V, A, H>
+impl<K, V, A, S> HAMTTrait<K, V, S> for HAMT<K, V, A, S>
 where
-    K: Content<H> + Eq + Hash,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Canon<S> + Eq + Hash + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
 }
 
-impl<K, V, A, H> HAMTTrait<K, V, H> for NarrowHAMT<K, V, A, H>
+impl<K, V, A, S> HAMTTrait<K, V, S> for NarrowHAMT<K, V, A, S>
 where
-    K: Content<H> + Eq + Hash,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Canon<S> + Eq + Hash + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
 }
 
-impl<K, V, A, H> SlotSelect for HAMT<K, V, A, H>
+impl<K, V, A, S> SlotSelect for HAMT<K, V, A, S>
 where
-    K: Content<H>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Canon<S> + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
     fn select_slot(hash: &[u8], depth: usize) -> usize {
         let ofs = depth / 2;
@@ -334,12 +360,12 @@ where
     }
 }
 
-impl<K, V, A, H> SlotSelect for NarrowHAMT<K, V, A, H>
+impl<K, V, A, S> SlotSelect for NarrowHAMT<K, V, A, S>
 where
-    K: Content<H>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Canon<S> + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
     fn select_slot(hash: &[u8], depth: usize) -> usize {
         let ofs = depth / 4;
@@ -354,12 +380,12 @@ where
     }
 }
 
-impl<K, V, A, H> HAMT<K, V, A, H>
+impl<K, V, A, S> HAMT<K, V, A, S>
 where
-    K: Content<H> + Eq + Hash,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Canon<S> + Clone + Eq + Hash,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
     /// Creates a new HAMT
     pub fn new() -> Self {
@@ -367,12 +393,15 @@ where
     }
 
     /// Insert key-value pair into the HAMT, optionally returning expelled value
-    pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
-        self.sub_insert(0, H::hash(&k), k, v)
+    pub fn insert(&mut self, k: K, v: V) -> Result<Option<V>, S::Error> {
+        self.sub_insert(0, hash::<_, S>(&k), k, v)
     }
 
     /// Get a reference to a value in the map
-    pub fn get<O>(&self, k: &O) -> io::Result<Option<ValPath<K, V, Self, H>>>
+    pub fn get<O>(
+        &self,
+        k: &O,
+    ) -> Result<Option<ValPath<K, V, Self, S>>, S::Error>
     where
         O: ?Sized + Hash + Eq,
         K: Borrow<O>,
@@ -384,7 +413,7 @@ where
     pub fn get_mut<O>(
         &mut self,
         k: &O,
-    ) -> io::Result<Option<ValPathMut<K, V, Self, H>>>
+    ) -> Result<Option<ValPathMut<K, V, Self, S>>, S::Error>
     where
         O: ?Sized + Hash + Eq,
         K: Borrow<O>,
@@ -393,12 +422,12 @@ where
     }
 
     /// Remove element with given key, returning it.
-    pub fn remove<O>(&mut self, k: &O) -> io::Result<Option<V>>
+    pub fn remove<O>(&mut self, k: &O) -> Result<Option<V>, S::Error>
     where
         O: ?Sized + Hash + Eq,
         K: Borrow<O>,
     {
-        match self.sub_remove(0, H::hash(k), k)? {
+        match self.sub_remove(0, hash::<_, S>(&k), k)? {
             Removed::None => Ok(None),
             Removed::Leaf(KV { key: _, val }) => Ok(Some(val)),
             _ => unreachable!(),
@@ -406,12 +435,12 @@ where
     }
 }
 
-impl<K, V, A, H> NarrowHAMT<K, V, A, H>
+impl<K, V, A, S> NarrowHAMT<K, V, A, S>
 where
-    K: Content<H> + Eq + Hash,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Canon<S> + Clone + Eq + Hash,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
     /// Creates a new HAMT
     pub fn new() -> Self {
@@ -419,12 +448,15 @@ where
     }
 
     /// Insert key-value pair into the HAMT, optionally returning expelled value
-    pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
-        self.sub_insert(0, H::hash(&k), k, v)
+    pub fn insert(&mut self, k: K, v: V) -> Result<Option<V>, S::Error> {
+        self.sub_insert(0, hash::<_, S>(&k), k, v)
     }
 
     /// Get a reference to a value in the map
-    pub fn get<O>(&self, k: &O) -> io::Result<Option<ValPath<K, V, Self, H>>>
+    pub fn get<O>(
+        &self,
+        k: &O,
+    ) -> Result<Option<ValPath<K, V, Self, S>>, S::Error>
     where
         O: ?Sized + Hash + Eq,
         K: Borrow<O>,
@@ -436,7 +468,7 @@ where
     pub fn get_mut<O>(
         &mut self,
         k: &O,
-    ) -> io::Result<Option<ValPathMut<K, V, Self, H>>>
+    ) -> Result<Option<ValPathMut<K, V, Self, S>>, S::Error>
     where
         O: ?Sized + Hash + Eq,
         K: Borrow<O>,
@@ -445,12 +477,12 @@ where
     }
 
     /// Remove element with given key, returning it.
-    pub fn remove<O>(&mut self, k: &O) -> io::Result<Option<V>>
+    pub fn remove<O>(&mut self, k: &O) -> Result<Option<V>, S::Error>
     where
         O: ?Sized + Hash + Eq,
         K: Borrow<O>,
     {
-        match self.sub_remove(0, H::hash(k), k)? {
+        match self.sub_remove(0, hash::<_, S>(&k), k)? {
             Removed::None => Ok(None),
             Removed::Leaf(KV { key: _, val }) => Ok(Some(val)),
             _ => unreachable!(),
@@ -458,118 +490,40 @@ where
     }
 }
 
-impl<K, V, A, H> Content<H> for HAMT<K, V, A, H>
+impl<K, V, A, S> Compound<S> for HAMT<K, V, A, S>
 where
-    K: Content<H>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
-{
-    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
-        let mut mask = 0u16;
-        for i in 0..16 {
-            if let HandleType::None = self.0[i].handle_type() {
-                // no-op
-            } else {
-                mask |= 1 << i;
-            }
-        }
-
-        <u16 as Content<H>>::persist(&mut mask, sink)?;
-
-        for (i, handle) in self.0.iter_mut().enumerate() {
-            if mask & (1 << i) != 0 {
-                handle.persist(sink)?
-            }
-        }
-        Ok(())
-    }
-
-    fn restore(source: &mut Source<H>) -> io::Result<Self> {
-        let mut bucket: [Handle<Self, H>; 16] = Default::default();
-        let mask = <u16 as Content<H>>::restore(source)?;
-        for (i, handle) in bucket.iter_mut().enumerate() {
-            if mask & (1 << i) != 0 {
-                *handle = Handle::restore(source)?
-            }
-        }
-        Ok(HAMT(bucket))
-    }
-}
-
-impl<K, V, A, H> Content<H> for NarrowHAMT<K, V, A, H>
-where
-    K: Content<H>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
-{
-    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
-        let mut mask = 0u8;
-        for i in 0..4 {
-            if let HandleType::None = self.0[i].handle_type() {
-                // no-op
-            } else {
-                mask |= 1 << i;
-            }
-        }
-
-        <u8 as Content<H>>::persist(&mut mask, sink)?;
-
-        for (i, handle) in self.0.iter_mut().enumerate() {
-            if mask & (1 << i) != 0 {
-                handle.persist(sink)?
-            }
-        }
-        Ok(())
-    }
-
-    fn restore(source: &mut Source<H>) -> io::Result<Self> {
-        let mut bucket: [Handle<Self, H>; 4] = Default::default();
-        let mask = <u8 as Content<H>>::restore(source)?;
-        for (i, handle) in bucket.iter_mut().enumerate() {
-            if mask & (1 << i) != 0 {
-                *handle = Handle::restore(source)?
-            }
-        }
-        Ok(NarrowHAMT(bucket))
-    }
-}
-
-impl<K, V, A, H> Compound<H> for HAMT<K, V, A, H>
-where
-    K: Content<H>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Canon<S> + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
     type Leaf = KV<K, V>;
     type Annotation = A;
 
-    fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
+    fn children_mut(&mut self) -> &mut [Handle<Self, S>] {
         &mut self.0
     }
 
-    fn children(&self) -> &[Handle<Self, H>] {
+    fn children(&self) -> &[Handle<Self, S>] {
         &self.0
     }
 }
 
-impl<K, V, A, H> Compound<H> for NarrowHAMT<K, V, A, H>
+impl<K, V, A, S> Compound<S> for NarrowHAMT<K, V, A, S>
 where
-    K: Content<H>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Canon<S> + Clone,
+    V: Canon<S> + Clone,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
     type Leaf = KV<K, V>;
     type Annotation = A;
 
-    fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
+    fn children_mut(&mut self) -> &mut [Handle<Self, S>] {
         &mut self.0
     }
 
-    fn children(&self) -> &[Handle<Self, H>] {
+    fn children(&self) -> &[Handle<Self, S>] {
         &self.0
     }
 }
@@ -664,8 +618,8 @@ mod test {
 
     mod narrow {
         use super::*;
-        type CountingNarrowHAMTMap<K, V, H> =
-            NarrowHAMT<K, V, Cardinality<u64>, H>;
+        type CountingNarrowHAMTMap<K, V, S> =
+            NarrowHAMT<K, V, Cardinality<u64>, S>;
         quickcheck_map!(|| CountingNarrowHAMTMap::default());
     }
 }

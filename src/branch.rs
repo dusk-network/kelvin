@@ -1,35 +1,36 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::io;
 use std::ops::{Deref, DerefMut};
 
-use bytehash::ByteHash;
-use cache::Cached;
+use canonical::Store;
 
 use crate::compound::Compound;
 use crate::raw_branch::{Level, RawBranch};
 use crate::search::Method;
 
-/// A branch into a `Compound<H>`
+/// A branch into a `Compound<S>`
 /// The Branch is guaranteed to always point to a leaf
 #[derive(Debug)]
-pub struct Branch<'a, C, H>(RawBranch<'a, C, H>);
-
-impl<'a, C, H> Branch<'a, C, H>
+pub struct Branch<'a, C, S>(RawBranch<'a, C, S>)
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Clone;
+
+impl<'a, C, S> Branch<'a, C, S>
+where
+    C: Compound<S>,
+    S: Store,
 {
     /// Attempt to construct a branch with the given search method
-    pub fn new<M: Method<C, H>>(
+    pub fn new<M: Method<C, S>>(
         node: &'a C,
         method: &mut M,
-    ) -> io::Result<Option<Self>>
+    ) -> Result<Option<Self>, S::Error>
     where
-        M: Method<C, H>,
+        C: Clone,
+        M: Method<C, S>,
     {
-        let mut inner = RawBranch::new_cached(Cached::Borrowed(node));
+        let mut inner = RawBranch::new_shared(node);
         inner.search(method)?;
 
         Ok(if inner.leaf().is_some() {
@@ -46,10 +47,10 @@ where
     /// Search for the next value in the branch, using `method`
     ///
     /// Takes self by value, and returns the updated branch or `None`
-    pub fn search<M: Method<C, H>>(
+    pub fn search<M: Method<C, S>>(
         mut self,
         method: &mut M,
-    ) -> io::Result<Option<Self>> {
+    ) -> Result<Option<Self>, S::Error> {
         self.0.advance();
         self.0.search(method)?;
         Ok(if self.0.leaf().is_some() {
@@ -60,15 +61,15 @@ where
     }
 
     /// Returns a reference to the levels of the branch
-    pub fn levels(&self) -> &[Level<'a, C, H>] {
+    pub fn levels(&self) -> &[Level<'a, C, S>] {
         self.0.levels()
     }
 }
 
-impl<'a, C, H> Deref for Branch<'a, C, H>
+impl<'a, C, S> Deref for Branch<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     type Target = C::Leaf;
 
@@ -77,23 +78,26 @@ where
     }
 }
 
-/// A mutable branch into a `Compound<H>`
+/// A mutable branch into a `Compound<S>`
 /// The BranchMut is guaranteed to always point to a leaf
 #[derive(Debug)]
-pub struct BranchMut<'a, C, H>(RawBranch<'a, C, H>)
+pub struct BranchMut<'a, C, S>(RawBranch<'a, C, S>)
 where
-    C: Compound<H>,
-    H: ByteHash;
+    C: Compound<S>,
+    S: Store;
 
-impl<'a, C, H> BranchMut<'a, C, H>
+impl<'a, C, S> BranchMut<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     ///
-    pub fn new<M>(node: &'a mut C, method: &mut M) -> io::Result<Option<Self>>
+    pub fn new<M>(
+        node: &'a mut C,
+        method: &mut M,
+    ) -> Result<Option<Self>, S::Error>
     where
-        M: Method<C, H>,
+        M: Method<C, S>,
     {
         let mut inner = RawBranch::new_mutable(node);
         inner.search(method)?;
@@ -111,10 +115,10 @@ where
     /// Search for the next value in the branch, using `method`
     ///
     /// Takes self by value, and returns the updated branch or `None`
-    pub fn search<M: Method<C, H>>(
+    pub fn search<M: Method<C, S>>(
         mut self,
         method: &mut M,
-    ) -> io::Result<Option<Self>> {
+    ) -> Result<Option<Self>, S::Error> {
         self.0.advance();
         self.0.search(method)?;
         Ok(if self.0.leaf().is_some() {
@@ -125,30 +129,30 @@ where
     }
 
     /// Returns a reference to the levels of the branch
-    pub fn levels(&self) -> &[Level<'a, C, H>] {
+    pub fn levels(&self) -> &[Level<'a, C, S>] {
         self.0.levels()
     }
 
     /// Returns a reference to the levels of the branch
-    pub fn levels_mut(&mut self) -> &mut [Level<'a, C, H>] {
+    pub fn levels_mut(&mut self) -> &mut [Level<'a, C, S>] {
         self.0.levels_mut()
     }
 }
 
-impl<'a, C, H> Drop for BranchMut<'a, C, H>
+impl<'a, C, S> Drop for BranchMut<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     fn drop(&mut self) {
         self.0.relink()
     }
 }
 
-impl<'a, C, H> Deref for BranchMut<'a, C, H>
+impl<'a, C, S> Deref for BranchMut<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     type Target = C::Leaf;
 
@@ -157,10 +161,11 @@ where
     }
 }
 
-impl<'a, C, H> DerefMut for BranchMut<'a, C, H>
+impl<'a, C, S> DerefMut for BranchMut<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
+    C::Leaf: 'a,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0.leaf_mut().expect("Invalid BranchMut")

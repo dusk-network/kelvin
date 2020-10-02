@@ -10,3 +10,5 @@ license = "MPL-2.0"
 
 [dependencies]
 kelvin = { path = "../..", version = "0.19" }
+canonical = { path = "../../../canonical/canon" }
+canonical_derive = { path = "../../../canonical/canon_derive" }

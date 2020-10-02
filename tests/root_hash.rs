@@ -1,12 +1,17 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use kelvin::{Blake2b, Compound, Store, Void};
+use kelvin::{Compound, Void};
 use kelvin_hamt::HAMT;
+
+use canonical::Store;
+use canonical_host::MemStore;
 
 #[test]
 fn root_hash() {
-    let mut hamt = HAMT::<_, _, Void, Blake2b>::new();
+    type Hamt = HAMT<u32, u32, Void, MemStore>;
+
+    let mut hamt = Hamt::new();
 
     for i in 0..1024 {
         hamt.insert(i, i).unwrap();
@@ -14,15 +19,15 @@ fn root_hash() {
 
     // Calculating the root hash should not write anything to any store
 
-    let root_hash = hamt.root_hash();
+    let root_hash: <MemStore as Store>::Ident = hamt.root_hash();
 
-    let store = Store::ephemeral();
+    let store = MemStore::new();
 
-    let snap = store.persist(&mut hamt).unwrap();
+    let id: <MemStore as Store>::Ident = store.put(&mut hamt).unwrap();
 
-    assert_eq!(&root_hash, snap.hash());
+    assert_eq!(root_hash, id);
 
-    let mut hamt_restored = store.restore(&snap).unwrap();
+    let mut hamt_restored = store.get::<Hamt>(&id).unwrap();
 
     let restored_root_hash = hamt_restored.root_hash();
 

@@ -21,8 +21,9 @@ macro_rules! annotation {
             Content as __Content,
             Sink as __Sink,
             Source as __Source,
-            ByteHash as __ByteHash
         };
+
+        use canonical::Store as __Store;
 
         $(#[$outer])*
         $pub struct $struct_name $( < $( $param ),* > )* {
@@ -43,21 +44,21 @@ macro_rules! annotation {
             }
         }
 
-        impl<H, $( $( $param ),* )* > __Content<H> for $struct_name $( < $( $param ),* > )*
+        impl<H, $( $( $param ),* )* > __Content<S> for $struct_name $( < $( $param ),* > )*
         where
             H: __ByteHash,
-            $( $ann_type : __Content<H> ),*
+            $( $ann_type : __Content<S> ),*
             $( , $( $whereclause )* )?
 
         {
-            fn persist(&mut self, sink: &mut __Sink<H>) -> io::Result<()> {
+            fn persist(&mut self, sink: &mut __Sink<S>) -> io::Result<()> {
                 $( self.$ann_key.persist(sink)? ; )*
                 Ok(())
             }
 
-            fn restore(source: &mut __Source<H>) -> io::Result<Self> {
+            fn restore(source: &mut __Source<S>) -> io::Result<Self> {
                 Ok($struct_name {
-                    $( $ann_key : < $ann_type as __Content<H> >::restore(source)? , )*
+                    $( $ann_key : < $ann_type as __Content<S> >::restore(source)? , )*
                 })
 
             }

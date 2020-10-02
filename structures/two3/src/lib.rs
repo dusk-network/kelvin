@@ -5,7 +5,6 @@
 #![warn(missing_docs)]
 
 use std::borrow::Borrow;
-use std::io;
 use std::marker::PhantomData;
 use std::mem;
 
@@ -19,23 +18,23 @@ use kelvin::{
 };
 
 /// The default 2-3 tree
-pub type DefaultTwo3Map<K, V, H> = Two3Tree<K, V, MaxKey<K>, H>;
+pub type DefaultTwo3Map<K, V, S> = Two3Tree<K, V, MaxKey<K>, S>;
 
 const N: usize = 2;
 const M: usize = 3;
 
 /// A 2-3 tree
 #[derive(Clone)]
-pub struct Two3Tree<K, V, A, H: ByteHash>(ArrayVec<[Handle<Self, H>; M]>)
+pub struct Two3Tree<K, V, A, S: Store>(ArrayVec<[Handle<Self, S>; M]>)
 where
-    Self: Compound<H>;
+    Self: Compound<S>;
 
-impl<K, V, A, H> Default for Two3Tree<K, V, A, H>
+impl<K, V, A, S> Default for Two3Tree<K, V, A, S>
 where
-    K: Content<H> + Ord,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Content<S> + Ord,
+    V: Content<S>,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
     fn default() -> Self {
         Two3Tree(Default::default())
@@ -70,18 +69,18 @@ impl<'a, K, O: ?Sized> From<&'a O> for Two3TreeSearch<'a, K, O> {
     }
 }
 
-impl<'a, K, V, A, O, H> Method<Two3Tree<K, V, A, H>, H>
+impl<'a, K, V, A, O, S> Method<Two3Tree<K, V, A, S>, S>
     for Two3TreeSearch<'a, K, O>
 where
-    K: Ord + Borrow<O> + Content<H>,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H> + Borrow<MaxKey<K>>,
+    K: Ord + Borrow<O> + Content<S>,
+    V: Content<S>,
+    A: Annotation<KV<K, V>, S> + Borrow<MaxKey<K>>,
     O: Ord + ?Sized,
-    H: ByteHash,
+    S: Store,
 {
     fn select(
         &mut self,
-        compound: &Two3Tree<K, V, A, H>,
+        compound: &Two3Tree<K, V, A, S>,
         _: usize,
     ) -> SearchResult {
         for (i, h) in compound.0.iter().enumerate() {
@@ -109,32 +108,32 @@ where
     }
 }
 
-enum InsertResult<C, H>
+enum InsertResult<C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     Ok,
     Replaced(C::Leaf),
-    Split(Handle<C, H>),
+    Split(Handle<C, S>),
 }
 
-enum RemoveResult<C, H>
+enum RemoveResult<C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     Noop,
     Removed(C::Leaf),
     Merge(C::Leaf),
 }
 
-impl<K, V, A, H> Two3Tree<K, V, A, H>
+impl<K, V, A, S> Two3Tree<K, V, A, S>
 where
-    K: Content<H> + Ord,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H> + Borrow<MaxKey<K>>,
-    H: ByteHash,
+    K: Content<S> + Ord,
+    V: Content<S>,
+    A: Annotation<KV<K, V>, S> + Borrow<MaxKey<K>>,
+    S: Store,
 {
     /// Creates a new Two3Tree
     pub fn new() -> Self {
@@ -142,7 +141,7 @@ where
     }
 
     /// Insert key-value pair into the Two3Tree, optionally returning expelled value
-    pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
+    pub fn insert(&mut self, k: K, v: V) -> Result<Option<V>, S::Error> {
         match self._insert(Handle::new_leaf(KV::new(k, v)), 0)? {
             InsertResult::Ok => Ok(None),
             InsertResult::Replaced(KV { key: _, val }) => Ok(Some(val)),
@@ -151,7 +150,10 @@ where
     }
 
     /// Get a reference to a value in the map
-    pub fn get<O>(&self, k: &O) -> io::Result<Option<ValPath<K, V, Self, H>>>
+    pub fn get<O>(
+        &self,
+        k: &O,
+    ) -> Result<Option<ValPath<K, V, Self, S>>, S::Error>
     where
         O: ?Sized + Ord + Eq,
         K: Borrow<O>,
@@ -163,7 +165,7 @@ where
     pub fn get_mut<O>(
         &mut self,
         k: &O,
-    ) -> io::Result<Option<ValPathMut<K, V, Self, H>>>
+    ) -> io::Result<Option<ValPathMut<K, V, Self, S>>>
     where
         O: ?Sized + Ord + Eq + Borrow<K>,
         K: Borrow<O>,
@@ -173,9 +175,9 @@ where
 
     fn _insert(
         &mut self,
-        mut handle: Handle<Self, H>,
+        mut handle: Handle<Self, S>,
         depth: usize,
-    ) -> io::Result<InsertResult<Self, H>> {
+    ) -> io::Result<InsertResult<Self, S>> {
         /// Use an enum to get around borrow issues
         #[derive(Debug)]
         enum Action {
@@ -322,7 +324,7 @@ where
         &mut self,
         k: &O,
         depth: usize,
-    ) -> io::Result<RemoveResult<Self, H>>
+    ) -> io::Result<RemoveResult<Self, S>>
     where
         O: ?Sized + Ord + Eq,
         K: Borrow<O>,
@@ -467,14 +469,14 @@ where
     }
 }
 
-impl<K, V, A, H> Content<H> for Two3Tree<K, V, A, H>
+impl<K, V, A, S> Content<S> for Two3Tree<K, V, A, S>
 where
-    K: Content<H> + Ord,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
-    H: ByteHash,
+    K: Content<S> + Ord,
+    V: Content<S>,
+    A: Annotation<KV<K, V>, S>,
+    S: Store,
 {
-    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
+    fn persist(&mut self, sink: &mut Sink<S>) -> io::Result<()> {
         (self.0.len() as u8).persist(sink)?;
         for h in &mut self.0 {
             h.persist(sink)?
@@ -482,7 +484,7 @@ where
         Ok(())
     }
 
-    fn restore(source: &mut Source<H>) -> io::Result<Self> {
+    fn restore(source: &mut Source<S>) -> io::Result<Self> {
         let mut b = Two3Tree::default();
         let len = u8::restore(source)?;
         for _ in 0..len {
@@ -492,22 +494,22 @@ where
     }
 }
 
-impl<K, V, A, H> Compound<H> for Two3Tree<K, V, A, H>
+impl<K, V, A, S> Compound<S> for Two3Tree<K, V, A, S>
 where
-    H: ByteHash,
-    K: Content<H> + Ord,
-    V: Content<H>,
-    A: Annotation<KV<K, V>, H>,
+    S: Store,
+    K: Content<S> + Ord,
+    V: Content<S>,
+    A: Annotation<KV<K, V>, S>,
 {
     type Leaf = KV<K, V>;
 
     type Annotation = A;
 
-    fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
+    fn children_mut(&mut self) -> &mut [Handle<Self, S>] {
         &mut self.0
     }
 
-    fn children(&self) -> &[Handle<Self, H>] {
+    fn children(&self) -> &[Handle<Self, S>] {
         &self.0
     }
 }

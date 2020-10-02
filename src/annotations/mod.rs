@@ -2,14 +2,12 @@
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
 use std::borrow::{Borrow, Cow};
-use std::io;
 
-use bytehash::ByteHash;
+use canonical::{Canon, Store};
+use canonical_derive::Canon;
 
 pub use cardinality::{Cardinality, Count, Counter, GetNth, Nth};
 pub use max_key::{MaxKey, MaxKeyType};
-
-use crate::{Content, Sink, Source};
 
 mod annotation_macro;
 mod cardinality;
@@ -17,17 +15,17 @@ mod cardinality;
 mod max_key;
 
 /// Helper group-trait for annotations
-pub trait Annotation<L, H>:
-    'static + Combine<Self> + for<'l> From<&'l L> + Content<H>
+pub trait Annotation<L, S>:
+    'static + Combine<Self> + for<'l> From<&'l L> + Canon<S>
 where
-    H: ByteHash,
+    S: Store,
 {
 }
 
-impl<A, L, H> Annotation<L, H> for A
+impl<A, L, S> Annotation<L, S> for A
 where
-    A: 'static + Combine<Self> + for<'any> From<&'any L> + Content<H>,
-    H: ByteHash,
+    A: 'static + Combine<Self> + for<'any> From<&'any L> + Canon<S>,
+    S: Store,
 {
 }
 
@@ -76,7 +74,7 @@ where
 }
 
 /// Empty annotation
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Canon)]
 pub struct Void;
 
 impl<T> From<&T> for Void {
@@ -87,13 +85,4 @@ impl<T> From<&T> for Void {
 
 impl Associative for Void {
     fn op(&mut self, _: &Self) {}
-}
-
-impl<H: ByteHash> Content<H> for Void {
-    fn persist(&mut self, _: &mut Sink<H>) -> io::Result<()> {
-        Ok(())
-    }
-    fn restore(_: &mut Source<H>) -> io::Result<Self> {
-        Ok(Void)
-    }
 }

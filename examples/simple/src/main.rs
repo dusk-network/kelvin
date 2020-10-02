@@ -1,21 +1,22 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::io;
+use canonical::Canon;
+use canonical_derive::Canon;
 
-use kelvin::{Blake2b, ByteHash, Content, Map, Root, Sink, Source};
+use kelvin::{Blake2b, ByteHash, Map, Root};
 use kelvin_hamt::DefaultHAMTMap as HAMT;
 use kelvin_two3::DefaultTwo3Map as Two3;
 
-#[derive(Clone)]
-struct State<H: ByteHash> {
-    map_a: HAMT<String, String, H>,
-    map_b: Two3<u64, u64, H>,
+#[derive(Clone, Canon)]
+struct State<S: Store> {
+    map_a: HAMT<String, String, S>,
+    map_b: Two3<u64, u64, S>,
     counter: u64,
 }
 
 // The initial root state
-impl<H: ByteHash> Default for State<H> {
+impl<S: Store> Default for State<S> {
     fn default() -> Self {
         // Set up a default kv for map_a:
         let mut map_a = HAMT::new();
@@ -30,23 +31,7 @@ impl<H: ByteHash> Default for State<H> {
     }
 }
 
-impl<H: ByteHash> Content<H> for State<H> {
-    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
-        self.map_a.persist(sink)?;
-        self.map_b.persist(sink)?;
-        self.counter.persist(sink)
-    }
-
-    fn restore(source: &mut Source<H>) -> io::Result<Self> {
-        Ok(State {
-            map_a: HAMT::restore(source)?,
-            map_b: Two3::restore(source)?,
-            counter: u64::restore(source)?,
-        })
-    }
-}
-
-fn main() -> io::Result<()> {
+fn main() -> Result<(), S::Error> {
     let mut root = Root::<_, Blake2b>::new("/tmp/kelvin-example")?;
 
     let mut state: State<_> = root.restore()?;

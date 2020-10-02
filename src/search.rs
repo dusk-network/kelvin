@@ -1,9 +1,10 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
+use canonical::Store;
+
 use crate::compound::Compound;
 use crate::handle::HandleType;
-use crate::ByteHash;
 
 #[derive(Debug)]
 /// Result of searching through a node
@@ -17,10 +18,10 @@ pub enum SearchResult {
 }
 
 /// Trait for searching through tree structured data
-pub trait Method<C, H>
+pub trait Method<C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     /// Select among the handles of the node, indexed from `offset`
     fn select(&mut self, compound: &C, offset: usize) -> SearchResult;
@@ -29,15 +30,15 @@ where
 #[derive(Clone)]
 pub struct First;
 
-impl<C, H> Method<C, H> for First
+impl<C, S> Method<C, S> for First
 where
-    H: ByteHash,
-    C: Compound<H>,
+    S: Store,
+    C: Compound<S>,
 {
     fn select(&mut self, compound: &C, offset: usize) -> SearchResult
     where
-        C: Compound<H>,
-        H: ByteHash,
+        C: Compound<S>,
+        S: Store,
     {
         for (i, h) in compound.children()[offset..].iter().enumerate() {
             match h.handle_type() {

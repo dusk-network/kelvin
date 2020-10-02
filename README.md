@@ -91,28 +91,6 @@ A Merkle tree is exactly this, the root node is just the hash of the hashes of i
 
 So, how is this implemented, and what do you need to adapt your program state to use this library?
 
-## Content trait
-
-The main trait underlying this library is the `Content` trait. It simply defines how a specific type is converted to/from bytes.
-
-We are not using `serde`, since we want to impose additional restrictions on the types, such as being `Clone`:able, `Eq`, etc. And we also want to make sure the mapping to hash values is always 1-1.
-
-```rust
-/// The main trait for content-adressable types, MUST assure a 1-1 mapping between
-/// values of the type and hash digests.
-pub trait Content<H: ByteHash>
-where
-    Self: Sized + Clone + 'static + PartialEq + Eq,
-{
-    /// Write the type to a `Sink`
-    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()>;
-    /// Restore the type from a `Source`
-    fn restore(source: &mut Source<H>) -> io::Result<Self>;
-}
-```
-
-And that's it! Just implement this type for your state and you can create snapshots of your state!
-
 ## Compound trait
 
 The compound trait is for making your own data structures. At the moment `kelvin` only comes with a Hash array mapped trie, which is the same data structure that Clojure uses for its maps, but the library is designed to make implementing your own structures as easy as possible.
@@ -269,8 +247,6 @@ When a datastructure is defined using this annotation type, it is automatically 
 Here is an example of all you need to construct a program state that can be persisted as a Merkle Tree. (taken from examples/simple)
 
 ```rust
-use std::io;
-
 use kelvin::{Blake2b, ByteHash, Content, Map, Root, Sink, Source};
 use kelvin_btree::BTree;
 

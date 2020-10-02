@@ -2,12 +2,14 @@
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
 use kelvin::annotations::{Cardinality, GetNth};
-use kelvin::{Blake2b, LeafIterable};
+use kelvin::LeafIterable;
 use kelvin_hamt::HAMT;
+
+use canonical_host::MemStore;
 
 #[test]
 fn nth_vs_iter() {
-    let mut hamt = HAMT::<_, _, Cardinality<u64>, Blake2b>::new();
+    let mut hamt = HAMT::<_, _, Cardinality<u64>, MemStore>::new();
 
     let n: u64 = 1024;
 

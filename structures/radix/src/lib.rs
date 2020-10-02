@@ -22,24 +22,24 @@ const N_BUCKETS: usize = 17;
 const MAX_KEY_LEN: usize = core::u16::MAX as usize / 2;
 
 /// Default unannotated Radix trie
-pub type DefaultRadixMap<K, V, H> = Radix<K, V, Void, H>;
+pub type DefaultRadixMap<K, V, S> = Radix<K, V, Void, S>;
 
 /// A Prefix tree
-pub struct Radix<K, V, A, H>
+pub struct Radix<K, V, A, S>
 where
-    Self: Compound<H>,
-    H: ByteHash,
+    Self: Compound<S>,
+    S: Store,
 {
-    handles: [Handle<Self, H>; N_BUCKETS],
+    handles: [Handle<Self, S>; N_BUCKETS],
     prefixes: [NibbleBuf; N_BUCKETS - 1],
 }
 
-impl<K, V, A, H> Clone for Radix<K, V, A, H>
+impl<K, V, A, S> Clone for Radix<K, V, A, S>
 where
     K: 'static,
-    V: Content<H>,
-    A: Annotation<V, H>,
-    H: ByteHash,
+    V: Content<S>,
+    A: Annotation<V, S>,
+    S: Store,
 {
     fn clone(&self) -> Self {
         Radix {
@@ -49,12 +49,12 @@ where
     }
 }
 
-impl<K, V, A, H> Default for Radix<K, V, A, H>
+impl<K, V, A, S> Default for Radix<K, V, A, S>
 where
     K: 'static,
-    V: Content<H>,
-    A: Annotation<V, H>,
-    H: ByteHash,
+    V: Content<S>,
+    A: Annotation<V, S>,
+    S: Store,
 {
     fn default() -> Self {
         Radix {
@@ -64,16 +64,16 @@ where
     }
 }
 
-impl<K, V, A, H> Method<Radix<K, V, A, H>, H> for Nibbles<'_>
+impl<K, V, A, S> Method<Radix<K, V, A, S>, S> for Nibbles<'_>
 where
     K: 'static,
-    V: Content<H>,
-    A: Annotation<V, H>,
-    H: ByteHash,
+    V: Content<S>,
+    A: Annotation<V, S>,
+    S: Store,
 {
     fn select(
         &mut self,
-        compound: &Radix<K, V, A, H>,
+        compound: &Radix<K, V, A, S>,
         _: usize,
     ) -> SearchResult {
         // Found an inner leaf
@@ -115,12 +115,12 @@ enum Removed<L> {
     Collapse(L, L, NibbleBuf, usize),
 }
 
-impl<K, V, A, H> Radix<K, V, A, H>
+impl<K, V, A, S> Radix<K, V, A, S>
 where
     K: AsRef<[u8]> + Eq + 'static,
-    V: Content<H>,
-    A: Annotation<V, H>,
-    H: ByteHash,
+    V: Content<S>,
+    A: Annotation<V, S>,
+    S: Store,
 {
     /// Creates a new Radix
     pub fn new() -> Self {
@@ -128,7 +128,7 @@ where
     }
 
     /// Get a reference to a value in the map
-    pub fn get<O>(&self, k: &O) -> io::Result<Option<ValPath<K, V, Self, H>>>
+    pub fn get<O>(&self, k: &O) -> io::Result<Option<ValPath<K, V, Self, S>>>
     where
         O: ?Sized + AsRef<[u8]>,
     {
@@ -139,7 +139,7 @@ where
     pub fn get_mut<O>(
         &mut self,
         k: &O,
-    ) -> io::Result<Option<ValPathMut<K, V, Self, H>>>
+    ) -> io::Result<Option<ValPathMut<K, V, Self, S>>>
     where
         O: ?Sized + AsRef<[u8]>,
     {
@@ -351,14 +351,14 @@ where
     }
 }
 
-impl<K, V, A, H> Content<H> for Radix<K, V, A, H>
+impl<K, V, A, S> Content<S> for Radix<K, V, A, S>
 where
     K: 'static,
-    V: Content<H>,
-    A: Annotation<V, H>,
-    H: ByteHash,
+    V: Content<S>,
+    A: Annotation<V, S>,
+    S: Store,
 {
-    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
+    fn persist(&mut self, sink: &mut Sink<S>) -> io::Result<()> {
         for i in 0..N_BUCKETS {
             self.handles[i].persist(sink)?
         }
@@ -370,8 +370,8 @@ where
         Ok(())
     }
 
-    fn restore(source: &mut Source<H>) -> io::Result<Self> {
-        let mut handles: [Handle<Self, H>; N_BUCKETS] = Default::default();
+    fn restore(source: &mut Source<S>) -> io::Result<Self> {
+        let mut handles: [Handle<Self, S>; N_BUCKETS] = Default::default();
         let mut prefixes: [NibbleBuf; N_BUCKETS - 1] = Default::default();
         for i in 0..N_BUCKETS {
             handles[i] = Handle::restore(source)?;
@@ -383,21 +383,21 @@ where
     }
 }
 
-impl<K, V, A, H> Compound<H> for Radix<K, V, A, H>
+impl<K, V, A, S> Compound<S> for Radix<K, V, A, S>
 where
     K: 'static,
-    V: Content<H>,
-    A: Annotation<V, H>,
-    H: ByteHash,
+    V: Content<S>,
+    A: Annotation<V, S>,
+    S: Store,
 {
     type Leaf = V;
     type Annotation = A;
 
-    fn children_mut(&mut self) -> &mut [Handle<Self, H>] {
+    fn children_mut(&mut self) -> &mut [Handle<Self, S>] {
         &mut self.handles
     }
 
-    fn children(&self) -> &[Handle<Self, H>] {
+    fn children(&self) -> &[Handle<Self, S>] {
         &self.handles
     }
 }
@@ -527,12 +527,12 @@ mod test {
         h.assert_correct_empty_state();
     }
 
-    impl<K, V, A, H> DebugDraw<H> for Radix<K, V, A, H>
+    impl<K, V, A, S> DebugDraw<S> for Radix<K, V, A, S>
     where
         K: 'static,
-        V: fmt::Debug + Content<H>,
-        A: Annotation<V, H>,
-        H: ByteHash,
+        V: fmt::Debug + Content<S>,
+        A: Annotation<V, S>,
+        S: Store,
     {
         fn draw_conf(&self, state: &mut DrawState) -> String {
             let mut s = String::new();

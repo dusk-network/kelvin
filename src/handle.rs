@@ -3,43 +3,24 @@
 
 use std::borrow::Cow;
 use std::fmt;
-use std::io::{self, Read, Write};
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::rc::Rc;
 
-use bytehash::ByteHash;
-use cache::Cached;
+use canonical::{Canon, Repr, Store};
+use canonical_derive::Canon;
 
 use crate::annotations::ErasedAnnotation;
 use crate::compound::Compound;
-use crate::content::Content;
 use crate::debug_draw::{DebugDraw, DrawState};
-use crate::sink::Sink;
-use crate::source::Source;
-use crate::store::Snapshot;
 
-pub trait RcExt<T> {
-    fn unwrap_or_clone(self) -> T;
-}
-
-impl<T: Clone> RcExt<T> for Rc<T> {
-    fn unwrap_or_clone(self) -> T {
-        match Rc::try_unwrap(self) {
-            Ok(t) => t,
-            Err(rc) => (*rc).clone(),
-        }
-    }
-}
-
-enum HandleInner<C, H>
+#[derive(Canon, Clone)]
+enum HandleInner<C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     Leaf(C::Leaf),
-    Node(Rc<C>, C::Annotation, Option<H::Digest>),
-    Persisted(Snapshot<C, H>, C::Annotation),
+    Node(Repr<C, S>, C::Annotation),
     None,
 }
 
@@ -55,16 +36,16 @@ pub enum HandleType {
 }
 
 /// The user-facing type for handles, the main type to build trees
-#[derive(Clone)]
-pub struct Handle<C, H>(HandleInner<C, H>)
+#[derive(Clone, Canon)]
+pub struct Handle<C, S>(HandleInner<C, S>)
 where
-    C: Compound<H>,
-    H: ByteHash;
+    C: Compound<S>,
+    S: Store;
 
-impl<C, H> fmt::Debug for Handle<C, H>
+impl<C, S> fmt::Debug for Handle<C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
     C::Leaf: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -77,30 +58,29 @@ where
 }
 
 /// User facing reference to a handle
-pub enum HandleRef<'a, C, H>
+pub enum HandleRef<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     /// Handle points at a Leaf
     Leaf(&'a C::Leaf),
     /// Handle points at a cached Node
-    Node(Cached<'a, C>),
+    Node(Cow<'a, C>),
     /// Handle points at nothing
     None,
 }
 
-impl<'a, C, H> Drop for HandleMut<'a, C, H>
+impl<'a, C, S> Drop for HandleMut<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     fn drop(&mut self) {
         if let HandleMut::Node(nodewrap) = self {
-            if let HandleInner::Node(c, ann, cached) = nodewrap.inner {
-                // clear cached hash
-                *cached = None;
-                if let Some(annotation) = c.annotation() {
+            if let HandleInner::Node(repr, ann) = nodewrap.inner {
+                if let Ok(Some(annotation)) = repr.val().map(|v| v.annotation())
+                {
                     *ann = annotation
                 }
             }
@@ -108,195 +88,187 @@ where
     }
 }
 
-impl<C, H> Default for Handle<C, H>
+impl<C, S> Default for Handle<C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     fn default() -> Self {
         Handle(HandleInner::None)
     }
 }
 
-impl<C, H> Clone for HandleInner<C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    fn clone(&self) -> Self {
-        match self {
-            HandleInner::Leaf(ref l) => HandleInner::Leaf(l.clone()),
-            HandleInner::Node(ref n, ref ann, ref cached) => {
-                HandleInner::Node(n.clone(), ann.clone(), *cached)
-            }
-            HandleInner::Persisted(ref snap, ref ann) => {
-                HandleInner::Persisted(snap.clone(), ann.clone())
-            }
-            HandleInner::None => HandleInner::None,
-        }
-    }
-}
+// impl<C, S> Clone for HandleInner<C, S>
+// where
+//     C: Compound<S>,
+//     S: Store,
+// {
+//     fn clone(&self) -> Self {
+//         match self {
+//             HandleInner::Leaf(ref l) => HandleInner::Leaf(l.clone()),
+//             HandleInner::Node(ref n, ref ann, ref cached) => {
+//                 HandleInner::Node(n.clone(), ann.clone(), *cached)
+//             }
+//             HandleInner::Persisted(ref snap, ref ann) => {
+//                 HandleInner::Persisted(snap.clone(), ann.clone())
+//             }
+//             HandleInner::None => HandleInner::None,
+//         }
+//     }
+// }
 
-impl<C, H> Content<H> for Handle<C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
-        match self.0 {
-            HandleInner::None => sink.write_all(&[0]),
-            HandleInner::Leaf(ref mut leaf) => {
-                sink.write_all(&[1])?;
-                leaf.persist(sink)
-            }
-            HandleInner::Persisted(ref hash, ref mut ann) => {
-                sink.write_all(&[2])?;
-                sink.write_all((**hash).as_ref())?;
-                ann.persist(sink)
-            }
-            HandleInner::Node(ref mut node, ref mut ann, ref mut cached) => {
-                match sink.store() {
-                    Some(store) => {
-                        // We need to write the data to the backing store
+// impl<C, S> Canon<S> for Handle<C, S>
+// where
+//     C: Compound<S>,
+//     S: Store,
+// {
+//     fn write(&self, sink: &mut impl Sink<S>) -> Result<(), S::Error> {
+//         // match self.0 {
+//         //     HandleInner::None => sink.write_all(&[0]),
+//         //     HandleInner::Leaf(ref mut leaf) => {
+//         //         sink.write_all(&[1])?;
+//         //         leaf.persist(sink)
+//         //     }
+//         //     HandleInner::Persisted(ref hash, ref mut ann) => {
+//         //         sink.write_all(&[2])?;
+//         //         sink.write_all((**hash).as_ref())?;
+//         //         ann.persist(sink)
+//         //     }
+//         //     HandleInner::Node(ref mut node, ref mut ann, ref mut cached) => {
+//         //         match sink.store() {
+//         //             Some(store) => {
+//         //                 // We need to write the data to the backing store
 
-                        // Create new sink sharing the store, either with the cached
-                        // hash or post-hashing
-                        let mut sub_sink = match *cached {
-                            Some(hash) => {
-                                debug_assert!({
-                                    let mut sub_sink = Sink::new_dry();
-                                    Rc::make_mut(node)
-                                        .persist(&mut sub_sink)?;
-                                    sub_sink.fin()? == hash
-                                });
-                                Sink::new_cached(hash, store)
-                            }
-                            None => Sink::new(store),
-                        };
+//         //                 // Create new sink sharing the store, either with the cached
+//         //                 // hash or post-hashing
+//         //                 let mut sub_sink = match *cached {
+//         //                     Some(hash) => {
+//         //                         debug_assert!({
+//         //                             let mut sub_sink = Sink::new_dry();
+//         //                             Rc::make_mut(node)
+//         //                                 .persist(&mut sub_sink)?;
+//         //                             sub_sink.fin()? == hash
+//         //                         });
+//         //                         Sink::new_cached(hash, store)
+//         //                     }
+//         //                     None => Sink::new(store),
+//         //                 };
 
-                        // Persist the node to the sub-sink
-                        Rc::make_mut(node).persist(&mut sub_sink)?;
-                        let hash = sub_sink.fin()?;
+//         //                 // Persist the node to the sub-sink
+//         //                 Rc::make_mut(node).persist(&mut sub_sink)?;
+//         //                 let hash = sub_sink.fin()?;
 
-                        // update the handle to a persisted reference
-                        let snap = Snapshot::new(hash, store);
-                        self.0 = HandleInner::Persisted(snap, ann.clone());
-                        // recurse to drop the borrow of ann
-                        // and hit the Persisted match arm
-                        self.persist(sink)
-                    }
-                    None => {
-                        // No store, we're doing a dry run
-                        let hash = match *cached {
-                            Some(hash) => {
-                                debug_assert!({
-                                    let mut sub_sink = Sink::new_dry();
-                                    Rc::make_mut(node)
-                                        .persist(&mut sub_sink)?;
-                                    sub_sink.fin()? == hash
-                                });
-                                hash
-                            }
-                            None => {
-                                let mut sub_sink = Sink::new_dry();
-                                Rc::make_mut(node).persist(&mut sub_sink)?;
-                                let hash = sub_sink.fin()?;
-                                // Update our hash cache
-                                *cached = Some(hash);
-                                hash
-                            }
-                        };
-                        // In a dry run, we write the hash as if it was persisted
-                        sink.write_all(&[2])?;
-                        sink.write_all(hash.as_ref())?;
-                        ann.persist(sink)
-                    }
-                }
-            }
-        }
-    }
+//         //                 // update the handle to a persisted reference
+//         //                 let snap = Snapshot::new(hash, store);
+//         //                 self.0 = HandleInner::Persisted(snap, ann.clone());
+//         //                 // recurse to drop the borrow of ann
+//         //                 // and hit the Persisted match arm
+//         //                 self.persist(sink)
+//         //             }
+//         //             None => {
+//         //                 // No store, we're doing a dry run
+//         //                 let hash = match *cached {
+//         //                     Some(hash) => {
+//         //                         debug_assert!({
+//         //                             let mut sub_sink = Sink::new_dry();
+//         //                             Rc::make_mut(node)
+//         //                                 .persist(&mut sub_sink)?;
+//         //                             sub_sink.fin()? == hash
+//         //                         });
+//         //                         hash
+//         //                     }
+//         //                     None => {
+//         //                         let mut sub_sink = Sink::new_dry();
+//         //                         Rc::make_mut(node).persist(&mut sub_sink)?;
+//         //                         let hash = sub_sink.fin()?;
+//         //                         // Update our hash cache
+//         //                         *cached = Some(hash);
+//         //                         hash
+//         //                     }
+//         //                 };
+//         //                 // In a dry run, we write the hash as if it was persisted
+//         //                 sink.write_all(&[2])?;
+//         //                 sink.write_all(hash.as_ref())?;
+//         //                 ann.persist(sink)
+//         //             }
+//         //         }
+//         //     }
+//         // }
+//         unimplemented!()
+//     }
 
-    fn restore(source: &mut Source<H>) -> io::Result<Self> {
-        let mut tag = [0u8];
-        source.read_exact(&mut tag)?;
-        match tag {
-            [0] => Ok(Handle(HandleInner::None)),
-            [1] => Ok(Handle(HandleInner::Leaf(C::Leaf::restore(source)?))),
-            [2] => {
-                let mut h = H::Digest::default();
-                source.read_exact(h.as_mut())?;
-                Ok(Handle(HandleInner::Persisted(
-                    Snapshot::new(h, source.store()),
-                    C::Annotation::restore(source)?,
-                )))
-            }
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid Handle encoding",
-            )),
-        }
-    }
-}
+//     fn read(source: &mut impl Source<S>) -> Result<S::Error, Self> {
+//         // let mut tag = [0u8];
+//         // source.read_exact(&mut tag)?;
+//         // match tag {
+//         //     [0] => Ok(Handle(HandleInner::None)),
+//         //     [1] => Ok(Handle(HandleInner::Leaf(C::Leaf::restore(source)?))),
+//         //     [2] => {
+//         //         let mut h = S::Ident::default();
+//         //         source.read_exact(h.as_mut())?;
+//         //         Ok(Handle(HandleInner::Persisted(
+//         //             Snapshot::new(h, source.store()),
+//         //             C::Annotation::restore(source)?,
+//         //         )))
+//         //     }
+//         //     _ => Err(io::Error::new(
+//         //         io::ErrorKind::InvalidData,
+//         //         "Invalid Handle encoding",
+//         //     )),
+//         // }
+//         unimplemented!()
+//     }
+// }
 
 /// A mutable reference to an empty `Handle`
-pub struct HandleMutNone<'a, C, H>
+pub struct HandleMutNone<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
-    inner: &'a mut HandleInner<C, H>,
+    inner: &'a mut HandleInner<C, S>,
 }
 
 /// A mutable reference to a `Handle` containing a leaf
-pub struct HandleMutLeaf<'a, C, H>
+pub struct HandleMutLeaf<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
-    inner: &'a mut HandleInner<C, H>,
+    inner: &'a mut HandleInner<C, S>,
 }
 
 /// A mutable reference to a `Handle` containing a node
-pub struct HandleMutNode<'a, C, H>
+pub struct HandleMutNode<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
-    inner: &'a mut HandleInner<C, H>,
+    inner: &'a mut HandleInner<C, S>,
 }
 
-impl<'a, C, H> Deref for HandleMutNode<'a, C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    type Target = C;
+// impl<'a, C, S> Deref for HandleMutNode<'a, C, S>
+// where
+//     C: Compound<S>,
+//     S: Store,
+// {
+//     type Target = C;
 
-    fn deref(&self) -> &Self::Target {
-        match self.inner {
-            HandleInner::Node(ref n, _, _) => n,
-            _ => panic!("invalid deref after replace"),
-        }
-    }
-}
+//     // We can assure that HandleMutNode is always "expanded"
+//     fn deref(&self) -> &Self::Target {
+//         match self.inner {
+//             HandleInner::Node(n, _) => {
+//                 &*n.val().expect("invalid deref after replace")
+//             }
+//             _ => panic!("invalid deref after replace"),
+//         }
+//     }
+// }
 
-impl<'a, C, H> DerefMut for HandleMutNode<'a, C, H>
+impl<'a, C, S> Deref for HandleMutLeaf<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self.inner {
-            HandleInner::Node(ref mut node, _, _) => Rc::make_mut(node),
-            _ => panic!("invalid deref after replace"),
-        }
-    }
-}
-
-impl<'a, C, H> Deref for HandleMutLeaf<'a, C, H>
-where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     type Target = C::Leaf;
 
@@ -308,10 +280,10 @@ where
     }
 }
 
-impl<'a, C, H> DerefMut for HandleMutLeaf<'a, C, H>
+impl<'a, C, S> DerefMut for HandleMutLeaf<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self.inner {
@@ -321,29 +293,40 @@ where
     }
 }
 
-impl<'a, C, H> HandleMutNode<'a, C, H>
+impl<'a, C, S> HandleMutNode<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     /// Replaces the node with `handle`
     /// Invalidates the `HandleMutNone` if `handle` is not a node.
-    pub fn replace(&mut self, handle: Handle<C, H>) -> Rc<C> {
+    pub fn replace(&mut self, handle: Handle<C, S>) -> Repr<C, S> {
         match mem::replace(self.inner, handle.0) {
-            HandleInner::Node(n, _, _) => n,
+            HandleInner::Node(n, _) => n,
+            _ => panic!("multiple incompatible replaces"),
+        }
+    }
+
+    /// Get a mutable reference to the underlying node in a closure
+    pub fn val_mut<R, F>(&mut self, f: F) -> Result<R, S::Error>
+    where
+        F: Fn(&mut C) -> Result<R, S::Error>,
+    {
+        match self.inner {
+            HandleInner::Node(ref mut n, _) => n.val_mut(f),
             _ => panic!("multiple incompatible replaces"),
         }
     }
 }
 
-impl<'a, C, H> HandleMutLeaf<'a, C, H>
+impl<'a, C, S> HandleMutLeaf<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     /// Replaces the leaf with `handle`
     /// Invalidates the `HandleMutNone` if `handle` is not None.
-    pub fn replace(&mut self, handle: Handle<C, H>) -> C::Leaf {
+    pub fn replace(&mut self, handle: Handle<C, S>) -> C::Leaf {
         match mem::replace(self.inner, handle.0) {
             HandleInner::Leaf(l) => l,
             _ => panic!("multiple incompatible replaces"),
@@ -351,51 +334,50 @@ where
     }
 }
 
-impl<'a, C, H> HandleMutNone<'a, C, H>
+impl<'a, C, S> HandleMutNone<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     /// Replaces the empty node with `handle`
     /// Invalidates the `HandleMutNone` if `handle` is not None.
-    pub fn replace(&mut self, handle: Handle<C, H>) {
+    pub fn replace(&mut self, handle: Handle<C, S>) {
         *self.inner = handle.0
     }
 }
 
 /// A mutable reference to a handle
-pub enum HandleMut<'a, C, H>
+pub enum HandleMut<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     /// Mutable handle pointing at a leaf
-    Leaf(HandleMutLeaf<'a, C, H>),
+    Leaf(HandleMutLeaf<'a, C, S>),
     /// Mutable handle pointing at a node
-    Node(HandleMutNode<'a, C, H>),
+    Node(HandleMutNode<'a, C, S>),
     /// Mutable handle pointing at an empty slot
-    None(HandleMutNone<'a, C, H>),
+    None(HandleMutNone<'a, C, S>),
 }
 
-impl<C, H> Handle<C, H>
+impl<C, S> Handle<C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     /// Constructs a new leaf Handle
-    pub fn new_leaf(l: C::Leaf) -> Handle<C, H> {
+    pub fn new_leaf(l: C::Leaf) -> Handle<C, S> {
         Handle(HandleInner::Leaf(l))
     }
 
     /// Constructs a new node Handle
-    pub fn new_node<I: Into<Rc<C>>>(n: I) -> Handle<C, H> {
-        let node = n.into();
+    pub fn new_node(node: C) -> Result<Handle<C, S>, S::Error> {
         let ann = node.annotation().expect("Empty node handles are invalid");
-        Handle(HandleInner::Node(node, ann, None))
+        Ok(Handle(HandleInner::Node(Repr::new(node)?, ann)))
     }
 
     /// Constructs a new empty node Handle
-    pub fn new_empty() -> Handle<C, H> {
+    pub fn new_empty() -> Handle<C, S> {
         Handle(HandleInner::None)
     }
 
@@ -414,8 +396,8 @@ where
     }
 
     /// Converts handle into leaf, panics on mismatching type
-    pub fn into_node(self) -> C {
-        if let HandleInner::Node(n, _, _) = self.0 {
+    pub fn into_node(self) -> Result<C, S::Error> {
+        if let HandleInner::Node(n, _) = self.0 {
             n.unwrap_or_clone()
         } else {
             panic!("Not a node")
@@ -455,15 +437,12 @@ where
         }
     }
 
-    pub(crate) fn node_hash(&mut self) -> Option<H::Digest> {
-        match self.0 {
+    pub(crate) fn node_hash(&mut self) -> Result<Option<S::Ident>, S::Error> {
+        Ok(match self.0 {
             HandleInner::None => None,
             HandleInner::Leaf(_) => None,
-            HandleInner::Node(ref mut n, ..) => {
-                Some(Rc::make_mut(n).root_hash())
-            }
-            HandleInner::Persisted(ref hash, ..) => Some(*hash.hash()),
-        }
+            HandleInner::Node(ref mut n, ..) => Some(n.get_id()?),
+        })
     }
 
     /// Return the annotation for the handle, unless None
@@ -473,28 +452,21 @@ where
             HandleInner::Leaf(ref l) => {
                 Some(Cow::Owned(C::Annotation::from(l)))
             }
-            HandleInner::Node(_, ref ann, _)
-            | HandleInner::Persisted(_, ref ann) => Some(Cow::Borrowed(ann)),
+            HandleInner::Node(_, ref ann) => Some(Cow::Borrowed(ann)),
         }
     }
 
     /// Returns a HandleRef from the Handle
-    pub fn inner(&self) -> io::Result<HandleRef<C, H>> {
+    pub fn inner(&self) -> Result<HandleRef<C, S>, S::Error> {
         Ok(match self.0 {
             HandleInner::None => HandleRef::None,
             HandleInner::Leaf(ref l) => HandleRef::Leaf(l),
-            HandleInner::Node(ref n, _, _) => {
-                HandleRef::Node(Cached::Borrowed(n.as_ref()))
-            }
-            HandleInner::Persisted(ref snap, _) => {
-                let restored = snap.restore()?;
-                HandleRef::Node(Cached::Spilled(Box::new(restored)))
-            }
+            HandleInner::Node(ref n, _) => HandleRef::Node(n.val()?),
         })
     }
 
     /// Returns a mutable reference to the `Handle` as `HandleMut`
-    pub fn inner_mut(&mut self) -> io::Result<HandleMut<C, H>> {
+    pub fn inner_mut(&mut self) -> Result<HandleMut<C, S>, S::Error> {
         match self.0 {
             HandleInner::None => {
                 Ok(HandleMut::None(HandleMutNone { inner: &mut self.0 }))
@@ -505,52 +477,39 @@ where
             HandleInner::Node(..) => {
                 Ok(HandleMut::Node(HandleMutNode { inner: &mut self.0 }))
             }
-            HandleInner::Persisted(_, _) => {
-                if let HandleInner::Persisted(snap, ann) =
-                    mem::replace(&mut self.0, HandleInner::None)
-                {
-                    let restored = snap.restore()?;
-                    *self =
-                        Handle(HandleInner::Node(Rc::new(restored), ann, None));
-                    self.inner_mut()
-                } else {
-                    unreachable!()
-                }
-            }
         }
     }
 }
 
-impl<C, H> ErasedAnnotation<C::Annotation> for Handle<C, H>
+impl<C, S> ErasedAnnotation<C::Annotation> for Handle<C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     fn annotation(&self) -> Option<Cow<C::Annotation>> {
         self.annotation()
     }
 }
 
-impl<C, H> Handle<C, H>
+impl<C, S> Handle<C, S>
 where
-    C: Compound<H> + DebugDraw<H>,
+    C: Compound<S> + DebugDraw<S>,
     C::Leaf: std::fmt::Debug,
-    H: ByteHash,
+    S: Store,
 {
     /// Draw contents of handle, for debug use
     pub fn draw_conf(&self, state: &mut DrawState) -> String {
         match self.0 {
             HandleInner::None => "□ ".to_string(),
             HandleInner::Leaf(ref l) => format!("{:?} ", l),
-            HandleInner::Node(ref n, _, _) => {
+            HandleInner::Node(ref n, _) => {
                 state.recursion += 1;
                 format!("\n{}{}", state.pad(), {
-                    let res = n.draw_conf(state);
+                    let res = n.val().unwrap().draw_conf(state);
                     state.recursion -= 1;
                     res
                 })
             }
-            _ => unimplemented!(),
         }
     }
 }

@@ -1,31 +1,33 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::{io, mem};
+use std::mem;
+
+use canonical::Store;
 
 use crate::branch::{Branch, BranchMut};
 use crate::compound::Compound;
 use crate::search::{First, Method};
-use crate::ByteHash;
 
 /// An iterator over the leaves of a Compound type
-pub enum LeafIter<'a, C, M, H>
+pub enum LeafIter<'a, C, M, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     Initial(&'a C, M),
-    Branch(Branch<'a, C, H>, M),
+    Branch(Branch<'a, C, S>, M),
     Exhausted,
 }
 
-impl<'a, C, M, H> Iterator for LeafIter<'a, C, M, H>
+impl<'a, C, M, S> Iterator for LeafIter<'a, C, M, S>
 where
-    C: Compound<H>,
-    M: 'a + Method<C, H>,
-    H: ByteHash,
+    C: Compound<S>,
+    M: 'a + Method<C, S>,
+    S: Store,
+    C::Leaf: 'a,
 {
-    type Item = io::Result<&'a C::Leaf>;
+    type Item = Result<&'a C::Leaf, S::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let old = mem::replace(self, LeafIter::Exhausted);
@@ -63,23 +65,24 @@ where
     }
 }
 
-pub enum LeafIterMut<'a, C, M, H>
+pub enum LeafIterMut<'a, C, M, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     Initial(&'a mut C, M),
-    Branch(BranchMut<'a, C, H>, M),
+    Branch(BranchMut<'a, C, S>, M),
     Exhausted,
 }
 
-impl<'a, C, M, H> Iterator for LeafIterMut<'a, C, M, H>
+impl<'a, C, M, S> Iterator for LeafIterMut<'a, C, M, S>
 where
-    C: Compound<H>,
-    M: 'a + Method<C, H>,
-    H: ByteHash,
+    C: Compound<S>,
+    M: 'a + Method<C, S>,
+    S: Store,
+    C::Leaf: 'a,
 {
-    type Item = io::Result<&'a mut C::Leaf>;
+    type Item = Result<&'a mut C::Leaf, S::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let old = mem::replace(self, LeafIterMut::Exhausted);
@@ -118,27 +121,27 @@ where
 }
 
 /// Trait for iterating over the leaves of a Compuond
-pub trait LeafIterable<H>
+pub trait LeafIterable<S>
 where
-    Self: Compound<H>,
-    H: ByteHash,
+    Self: Compound<S>,
+    S: Store,
 {
     /// Returns an iterator over the leaves of the Compound
-    fn iter(&self) -> LeafIter<Self, First, H>;
+    fn iter(&self) -> LeafIter<Self, First, S>;
     /// Returns an iterator over the mutable leaves of the Compound
-    fn iter_mut(&mut self) -> LeafIterMut<Self, First, H>;
+    fn iter_mut(&mut self) -> LeafIterMut<Self, First, S>;
 }
 
-impl<C, H> LeafIterable<H> for C
+impl<C, S> LeafIterable<S> for C
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
-    fn iter(&self) -> LeafIter<Self, First, H> {
+    fn iter(&self) -> LeafIter<Self, First, S> {
         LeafIter::Initial(self, First)
     }
 
-    fn iter_mut(&mut self) -> LeafIterMut<Self, First, H> {
+    fn iter_mut(&mut self) -> LeafIterMut<Self, First, S> {
         LeafIterMut::Initial(self, First)
     }
 }

@@ -20,7 +20,7 @@ impl DrawState {
 }
 
 /// Trait allowing structures to be printed for debugging.
-pub trait DebugDraw<H> {
+pub trait DebugDraw<S> {
     /// Draw the structure as a string
     fn draw_conf(&self, state: &mut DrawState) -> String;
     /// Draw the structure as a string

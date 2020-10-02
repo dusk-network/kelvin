@@ -3,17 +3,17 @@
 
 use std::borrow::Borrow;
 use std::cmp::Ord;
-use std::io;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-use bytehash::ByteHash;
+use canonical::{Canon, Store};
+use canonical_derive::Canon;
 use num::{One, Zero};
 
 use super::Associative;
 use crate::branch::Branch;
 use crate::handle::HandleType;
 use crate::search::{Method, SearchResult};
-use crate::{Compound, Content, Sink, Source};
+use crate::Compound;
 
 /// Trait group for Cardinality inner type
 pub trait Counter:
@@ -26,7 +26,7 @@ impl<T> Counter for T where
 }
 
 /// Annotation that keeps track of total number of leaves
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Canon)]
 pub struct Cardinality<T>(T);
 
 impl<T> Associative for Cardinality<T>
@@ -47,31 +47,17 @@ where
     }
 }
 
-impl<H, U> Content<H> for Cardinality<U>
-where
-    H: ByteHash,
-    U: Content<H> + Counter,
-{
-    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
-        self.0.persist(sink)
-    }
-
-    fn restore(source: &mut Source<H>) -> io::Result<Self> {
-        Ok(Cardinality(U::restore(source)?))
-    }
-}
-
 /// Trait for counting the number of elements in the collection
-pub trait Count<U, H> {
+pub trait Count<U, S> {
     /// Returns the number of elements in collection
     fn count(&self) -> U;
 }
 
-impl<U, C, H> Count<U, H> for C
+impl<U, C, S> Count<U, S> for C
 where
     U: Counter,
-    H: ByteHash,
-    C: Compound<H>,
+    S: Store,
+    C: Compound<S>,
     C::Annotation: Borrow<Cardinality<U>>,
 {
     fn count(&self) -> U {
@@ -91,11 +77,11 @@ impl<U> Nth<U> {
     }
 }
 
-impl<'a, C, U, H> Method<C, H> for Nth<U>
+impl<'a, C, U, S> Method<C, S> for Nth<U>
 where
-    C: Compound<H>,
+    C: Compound<S>,
     C::Annotation: Borrow<Cardinality<U>>,
-    H: ByteHash,
+    S: Store,
     U: Counter,
 {
     fn select(&mut self, compound: &C, _: usize) -> SearchResult {
@@ -127,19 +113,22 @@ where
 }
 
 /// Trait for finding the nth element of a collection
-pub trait GetNth<U, H>: Sized {
+pub trait GetNth<U, S>: Sized + Clone
+where
+    S: Store,
+{
     /// Returns a branch to the n:th element, if any
-    fn nth(&self, i: U) -> io::Result<Option<Branch<Self, H>>>;
+    fn nth(&self, i: U) -> Result<Option<Branch<Self, S>>, S::Error>;
 }
 
-impl<C, U, H> GetNth<U, H> for C
+impl<C, U, S> GetNth<U, S> for C
 where
-    C: Compound<H>,
+    C: Compound<S>,
     C::Annotation: Borrow<Cardinality<U>>,
     U: Counter,
-    H: ByteHash,
+    S: Store,
 {
-    fn nth(&self, i: U) -> io::Result<Option<Branch<Self, H>>> {
+    fn nth(&self, i: U) -> Result<Option<Branch<Self, S>>, S::Error> {
         Branch::new(self, &mut Nth::new(i))
     }
 }

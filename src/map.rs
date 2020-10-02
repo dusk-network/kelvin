@@ -2,23 +2,20 @@
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
 use std::borrow::{Borrow, BorrowMut};
-use std::io;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-use bytehash::ByteHash;
+use canonical::{Canon, Store};
+use canonical_derive::Canon;
 use owning_ref::{OwningRef, OwningRefMut, StableAddress};
 
 use crate::branch::{Branch, BranchMut};
 use crate::compound::Compound;
-use crate::content::Content;
 use crate::iter::{LeafIter, LeafIterMut};
 use crate::search::{First, Method};
-use crate::sink::Sink;
-use crate::source::Source;
 
 /// A Key-value pair type
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Canon)]
 pub struct KV<K, V> {
     /// the key of the pair
     pub key: K,
@@ -36,25 +33,6 @@ impl<K, V> KV<K, V> {
 impl<K, V> Into<(K, V)> for KV<K, V> {
     fn into(self) -> (K, V) {
         (self.key, self.val)
-    }
-}
-
-impl<K, V, H> Content<H> for KV<K, V>
-where
-    K: Content<H>,
-    V: Content<H>,
-    H: ByteHash,
-{
-    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
-        self.key.persist(sink)?;
-        self.val.persist(sink)
-    }
-    /// Restore the type from a `Source`
-    fn restore(source: &mut Source<H>) -> io::Result<Self> {
-        Ok(KV {
-            key: K::restore(source)?,
-            val: V::restore(source)?,
-        })
     }
 }
 
@@ -77,50 +55,50 @@ impl<K, V> BorrowMut<V> for KV<K, V> {
 }
 
 /// A path to a leaf in a map Compound
-pub struct ValPath<'a, K, V, C, H>
+pub struct ValPath<'a, K, V, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
-    branch: Branch<'a, C, H>,
+    branch: Branch<'a, C, S>,
     _marker: PhantomData<(K, V)>,
 }
 
 /// A path to a mutable leaf in a map Compound
-pub struct ValPathMut<'a, K, V, C, H>
+pub struct ValPathMut<'a, K, V, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
-    branch: BranchMut<'a, C, H>,
+    branch: BranchMut<'a, C, S>,
     _marker: PhantomData<(K, V)>,
 }
 
 // The following
-unsafe impl<'a, K, V, C, H> StableAddress for ValPath<'a, K, V, C, H>
+unsafe impl<'a, K, V, C, S> StableAddress for ValPath<'a, K, V, C, S>
 where
-    C: Compound<H>,
+    C: Compound<S>,
     C::Leaf: Borrow<V>,
-    H: ByteHash,
+    S: Store,
 {
 }
-unsafe impl<'a, K, V, C, H> StableAddress for ValPathMut<'a, K, V, C, H>
+unsafe impl<'a, K, V, C, S> StableAddress for ValPathMut<'a, K, V, C, S>
 where
-    C: Compound<H>,
+    C: Compound<S>,
     C::Leaf: Borrow<V>,
-    H: ByteHash,
+    S: Store,
 {
 }
 
-impl<'a, K, V, C, H> ValPath<'a, K, V, C, H>
+impl<'a, K, V, C, S> ValPath<'a, K, V, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     /// Creates a new `ValPath`, when leaf is found and key matches
-    pub fn new<M>(node: &'a C, method: &mut M) -> io::Result<Option<Self>>
+    pub fn new<M>(node: &'a C, method: &mut M) -> Result<Option<Self>, S::Error>
     where
-        M: Method<C, H>,
+        M: Method<C, S>,
     {
         Ok(Branch::new(node, method)?
             .filter(|branch| branch.exact())
@@ -131,15 +109,18 @@ where
     }
 }
 
-impl<'a, K, V, C, H> ValPathMut<'a, K, V, C, H>
+impl<'a, K, V, C, S> ValPathMut<'a, K, V, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     /// Creates a new `ValPathMut`
-    pub fn new<M>(node: &'a mut C, method: &mut M) -> io::Result<Option<Self>>
+    pub fn new<M>(
+        node: &'a mut C,
+        method: &mut M,
+    ) -> Result<Option<Self>, S::Error>
     where
-        M: Method<C, H>,
+        M: Method<C, S>,
     {
         Ok(BranchMut::new(node, method)?
             .filter(|branch| branch.exact())
@@ -150,11 +131,11 @@ where
     }
 }
 
-impl<'a, K, V, C, H> Deref for ValPath<'a, K, V, C, H>
+impl<'a, K, V, C, S> Deref for ValPath<'a, K, V, C, S>
 where
-    C: Compound<H>,
+    C: Compound<S>,
     C::Leaf: Borrow<V>,
-    H: ByteHash,
+    S: Store,
 {
     type Target = V;
 
@@ -163,11 +144,11 @@ where
     }
 }
 
-impl<'a, K, V, C, H> Deref for ValPathMut<'a, K, V, C, H>
+impl<'a, K, V, C, S> Deref for ValPathMut<'a, K, V, C, S>
 where
-    C: Compound<H>,
+    C: Compound<S>,
     C::Leaf: Borrow<V>,
-    H: ByteHash,
+    S: Store,
 {
     type Target = V;
 
@@ -176,72 +157,72 @@ where
     }
 }
 
-impl<'a, K, V, C, H> DerefMut for ValPathMut<'a, K, V, C, H>
+impl<'a, K, V, C, S> DerefMut for ValPathMut<'a, K, V, C, S>
 where
-    C: Compound<H>,
+    C: Compound<S>,
     C::Leaf: BorrowMut<V>,
-    H: ByteHash,
+    S: Store,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         (*self.branch).borrow_mut()
     }
 }
 
-pub struct ValIter<'a, C, V, M, H>(LeafIter<'a, C, M, H>, PhantomData<V>)
+pub struct ValIter<'a, C, V, M, S>(LeafIter<'a, C, M, S>, PhantomData<V>)
 where
-    C: Compound<H>,
-    H: ByteHash;
+    C: Compound<S>,
+    S: Store;
 
-pub struct ValIterMut<'a, C, V, M, H>(LeafIterMut<'a, C, M, H>, PhantomData<V>)
+pub struct ValIterMut<'a, C, V, M, S>(LeafIterMut<'a, C, M, S>, PhantomData<V>)
 where
-    C: Compound<H>,
-    H: ByteHash;
+    C: Compound<S>,
+    S: Store;
 
-pub struct KeyIter<'a, C, K, V, M, H>(
-    LeafIter<'a, C, M, H>,
+pub struct KeyIter<'a, C, K, V, M, S>(
+    LeafIter<'a, C, M, S>,
     PhantomData<(K, V)>,
 )
 where
-    C: Compound<H>,
-    H: ByteHash;
+    C: Compound<S>,
+    S: Store;
 
 /// Compound can be iterated over like a map
-pub trait ValIterable<V, H>
+pub trait ValIterable<V, S>
 where
-    Self: Compound<H>,
-    H: ByteHash,
+    Self: Compound<S>,
+    S: Store,
 {
     /// Iterator over the values of the map
-    fn values(&self) -> ValIter<Self, V, First, H>;
+    fn values(&self) -> ValIter<Self, V, First, S>;
 
     /// Iterator over the mutable values of the map
-    fn values_mut(&mut self) -> ValIterMut<Self, V, First, H>;
+    fn values_mut(&mut self) -> ValIterMut<Self, V, First, S>;
 }
 
 /// Compound can have its values iterated over
-impl<C, V, H> ValIterable<V, H> for C
+impl<C, V, S> ValIterable<V, S> for C
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
-    fn values(&self) -> ValIter<Self, V, First, H> {
+    fn values(&self) -> ValIter<Self, V, First, S> {
         ValIter(LeafIter::Initial(self, First), PhantomData)
     }
 
-    fn values_mut(&mut self) -> ValIterMut<Self, V, First, H> {
+    fn values_mut(&mut self) -> ValIterMut<Self, V, First, S> {
         ValIterMut(LeafIterMut::Initial(self, First), PhantomData)
     }
 }
 
-impl<'a, C, V, M, H> Iterator for ValIter<'a, C, V, M, H>
+impl<'a, C, V, M, S> Iterator for ValIter<'a, C, V, M, S>
 where
-    C: Compound<H>,
+    C: Compound<S>,
     C::Leaf: Borrow<V>,
-    M: 'a + Method<C, H>,
+    M: 'a + Method<C, S>,
     V: 'a,
-    H: ByteHash,
+    S: Store,
 {
-    type Item = io::Result<&'a V>;
+    type Item = Result<&'a V, S::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.next() {
@@ -252,15 +233,15 @@ where
     }
 }
 
-impl<'a, C, V, M, H> Iterator for ValIterMut<'a, C, V, M, H>
+impl<'a, C, V, M, S> Iterator for ValIterMut<'a, C, V, M, S>
 where
-    C: Compound<H>,
+    C: Compound<S>,
     C::Leaf: BorrowMut<V>,
-    M: 'a + Method<C, H>,
+    M: 'a + Method<C, S>,
     V: 'a,
-    H: ByteHash,
+    S: Store,
 {
-    type Item = io::Result<&'a mut V>;
+    type Item = Result<&'a mut V, S::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.next() {
@@ -271,16 +252,16 @@ where
     }
 }
 
-impl<'a, C, K, V, M, H> Iterator for KeyIter<'a, C, K, V, M, H>
+impl<'a, C, K, V, M, S> Iterator for KeyIter<'a, C, K, V, M, S>
 where
-    C: Compound<H>,
+    C: Compound<S>,
     C::Leaf: Borrow<K>,
-    M: 'a + Method<C, H>,
+    M: 'a + Method<C, S>,
     K: 'a,
     V: 'a,
-    H: ByteHash,
+    S: Store,
 {
-    type Item = io::Result<&'a K>;
+    type Item = Result<&'a K, S::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.next() {
@@ -331,19 +312,22 @@ impl<'a, T, V> ValRefMut<'a, V> for T where
 }
 
 /// Collection can be read as a map
-pub trait Map<'a, K, O, V, H>
+pub trait Map<'a, K, O, V, S>
 where
-    Self: Compound<H>,
+    Self: Compound<S>,
     Self::Leaf: Borrow<V>,
     K: Borrow<O> + 'a,
     O: ?Sized + 'a,
-    H: ByteHash,
+    S: Store,
 {
     /// The method used to search for keys in the structure
-    type KeySearch: Method<Self, H> + From<&'a O>;
+    type KeySearch: Method<Self, S> + From<&'a O>;
 
     /// Returns a reference to a value in the map, if any
-    fn get(&self, k: &'a O) -> io::Result<Option<ValPath<K, V, Self, H>>> {
+    fn get(
+        &self,
+        k: &'a O,
+    ) -> Result<Option<ValPath<K, V, Self, S>>, S::Error> {
         ValPath::new(self, &mut Self::KeySearch::from(k.borrow()))
     }
 
@@ -351,7 +335,7 @@ where
     fn get_mut(
         &mut self,
         k: &'a O,
-    ) -> io::Result<Option<ValPathMut<K, V, Self, H>>> {
+    ) -> Result<Option<ValPathMut<K, V, Self, S>>, S::Error> {
         ValPathMut::new(self, &mut Self::KeySearch::from(k.borrow()))
     }
 }

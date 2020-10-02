@@ -1,14 +1,16 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use kelvin::{Blake2b, Compound, Void, KV};
+use kelvin::{Compound, Void, KV};
 use kelvin_hamt::{HAMTSearch, NarrowHAMT};
+
+use canonical_host::MemStore;
 
 #[test]
 fn merkle_proof() {
     use kelvin::Proof;
 
-    let mut hamt = NarrowHAMT::<_, _, Void, Blake2b>::new();
+    let mut hamt = NarrowHAMT::<_, _, Void, MemStore>::new();
 
     let n = 16;
 
@@ -30,12 +32,12 @@ fn merkle_proof() {
         };
 
         assert_eq!(
-            proof.prove_member(&mut cloned),
+            proof.prove_member(&mut cloned).unwrap(),
             Some(&KV { key: i, val: i })
         );
 
         cloned.insert(3, 8).unwrap();
 
-        assert_eq!(proof.prove_member(&mut cloned), None);
+        assert_eq!(proof.prove_member(&mut cloned).unwrap(), None);
     }
 }

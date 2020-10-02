@@ -267,11 +267,11 @@ impl AsNibbles for NibbleBuf {
     }
 }
 
-impl<H> Content<H> for NibbleBuf
+impl<S> Content<S> for NibbleBuf
 where
     H: ByteHash,
 {
-    fn persist(&mut self, sink: &mut Sink<H>) -> io::Result<()> {
+    fn persist(&mut self, sink: &mut Sink<S>) -> io::Result<()> {
         // different cases illustrated
 
         // A [|0 0, 0 0|] 0 3 - two bytes
@@ -299,7 +299,7 @@ where
         sink.write_all(&self.bytes[byte_range_start..byte_range_end])
     }
 
-    fn restore(source: &mut Source<H>) -> io::Result<Self> {
+    fn restore(source: &mut Source<S>) -> io::Result<Self> {
         let ofs_front = u16::restore(source)? as usize;
         let ofs_back = u16::restore(source)? as usize;
 

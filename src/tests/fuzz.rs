@@ -4,8 +4,9 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::{ByteHash, Content, Store};
 use arbitrary::{Arbitrary, Unstructured};
+use canonical::{Canon, Store};
+use canonical_host::MemStore;
 
 const FUZZ_ITERATIONS: usize = 1024;
 
@@ -17,23 +18,23 @@ fn hash<T: Hash>(t: T) -> u64 {
 
 /// Fuzzes a type with regards to its Content implementation.
 /// making sure every serialization produces an Equal result when deserialized
-pub fn fuzz_content<C: Content<H> + Arbitrary + PartialEq, H: ByteHash>() {
-    fuzz_content_iterations::<C, H>(FUZZ_ITERATIONS)
+pub fn fuzz_content<C: Canon<MemStore> + Arbitrary + PartialEq, S: Store>() {
+    fuzz_content_iterations::<C, S>(FUZZ_ITERATIONS)
 }
 
 /// Fuzzes for a set number of iterations
 pub fn fuzz_content_iterations<
-    C: Content<H> + Arbitrary + PartialEq,
-    H: ByteHash,
+    C: Canon<MemStore> + Arbitrary + PartialEq,
+    S: Store,
 >(
     iterations: usize,
 ) {
-    let store = Store::ephemeral();
+    let store = MemStore::new();
     let mut entropy = 0;
     for _ in 0..iterations {
         let mut bytes = vec![];
 
-        let mut content = {
+        let content = {
             loop {
                 match C::arbitrary(&mut Unstructured::new(&bytes)) {
                     Ok(t) => break t,
@@ -45,8 +46,8 @@ pub fn fuzz_content_iterations<
             }
         };
 
-        let snap = store.persist(&mut content).unwrap();
-        let restored = snap.restore().unwrap();
+        let id = store.put(&content).unwrap();
+        let restored = store.get(&id).unwrap();
 
         assert!(content == restored);
     }

@@ -5,24 +5,25 @@ mod fuzz;
 mod quickcheck_map;
 mod quickcheck_stack;
 
-use crate::{ByteHash, Compound, HandleType};
+use crate::{Compound, HandleType};
+pub use arbitrary;
 pub use fuzz::{fuzz_content, fuzz_content_iterations};
 pub use quickcheck;
 pub use rand;
 pub use tempfile;
 
-pub use arbitrary;
+use canonical::Store;
 
 /// Trait to test for correct empty state of a structure
-pub trait CorrectEmptyState<H> {
+pub trait CorrectEmptyState<Se> {
     /// Make sure the collection is properly empty
     fn assert_correct_empty_state(&self);
 }
 
-impl<C, H> CorrectEmptyState<H> for C
+impl<C, S> CorrectEmptyState<S> for C
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     fn assert_correct_empty_state(&self) {
         for child in self.children().iter() {

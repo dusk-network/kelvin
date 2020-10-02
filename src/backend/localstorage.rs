@@ -13,10 +13,10 @@ use web_sys::Storage;
 
 use crate::backend::{Backend, PutResult};
 
-pub struct WebBackend<H: ByteHash> {
+pub struct WebBackend<S: Store> {
     storage: web_sys::Storage,
     name: String,
-    _marker: PhantomData<H>,
+    _marker: PhantomData<S>,
 }
 
 #[wasm_bindgen]
@@ -24,10 +24,10 @@ extern "C" {
     fn alert(s: &str);
 }
 
-unsafe impl<H: ByteHash> Send for WebBackend<H> {}
-unsafe impl<H: ByteHash> Sync for WebBackend<H> {}
+unsafe impl<S: Store> Send for WebBackend<S> {}
+unsafe impl<S: Store> Sync for WebBackend<S> {}
 
-impl<H: ByteHash> WebBackend<H> {
+impl<S: Store> WebBackend<S> {
     pub fn new<P: Into<PathBuf>>(name: P) -> io::Result<Self> {
         let name = name.into().to_str().expect("invalid name").to_owned();
         let window = web_sys::window().expect("Could not get local storage");
@@ -43,8 +43,8 @@ impl<H: ByteHash> WebBackend<H> {
     }
 }
 
-impl<H: ByteHash> Backend<H> for WebBackend<H> {
-    fn get<'a>(&'a self, hash: &H::Digest) -> io::Result<Box<dyn Read + 'a>> {
+impl<S: Store> Backend<S> for WebBackend<S> {
+    fn get<'a>(&'a self, hash: &S::Ident) -> io::Result<Box<dyn Read + 'a>> {
         let mut key = self.name.clone();
         encode_config_buf(hash.as_ref(), STANDARD_NO_PAD, &mut key);
 
@@ -55,11 +55,7 @@ impl<H: ByteHash> Backend<H> for WebBackend<H> {
         }
     }
 
-    fn put(
-        &mut self,
-        hash: H::Digest,
-        bytes: Vec<u8>,
-    ) -> io::Result<PutResult> {
+    fn put(&mut self, hash: S::Ident, bytes: Vec<u8>) -> io::Result<PutResult> {
         let mut key = self.name.clone();
         encode_config_buf(hash.as_ref(), STANDARD_NO_PAD, &mut key);
 

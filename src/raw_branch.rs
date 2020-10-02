@@ -1,13 +1,11 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::io;
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 
-use bytehash::ByteHash;
-use cache::Cached;
+use canonical::Store;
 
 use crate::compound::Compound;
 use crate::handle::{Handle, HandleRef};
@@ -20,24 +18,30 @@ pub enum Found {
 }
 
 #[derive(Debug)]
-enum NodeRef<'a, C, H> {
-    Cached(Cached<'a, C>),
+enum NodeRef<'a, C, S>
+where
+    C: Clone,
+{
+    Shared(&'a C),
     Mutable(&'a mut C),
     Owned(Box<C>),
-    Placeholder(PhantomData<H>),
+    Placeholder(PhantomData<S>),
 }
 
 /// Represents a level in a branch
 #[derive(Debug)]
-pub struct Level<'a, C, H> {
+pub struct Level<'a, C, S>
+where
+    C: Clone,
+{
     ofs: usize,
-    node: NodeRef<'a, C, H>,
+    node: NodeRef<'a, C, S>,
 }
 
-impl<'a, C, H> Deref for Level<'a, C, H>
+impl<'a, C, S> Deref for Level<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     type Target = C;
 
@@ -46,10 +50,10 @@ where
     }
 }
 
-impl<'a, C, H> DerefMut for Level<'a, C, H>
+impl<'a, C, S> DerefMut for Level<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.node
@@ -57,27 +61,30 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) struct RawBranch<'a, C, H> {
-    levels: Vec<Level<'a, C, H>>,
+pub(crate) struct RawBranch<'a, C, S>
+where
+    C: Clone,
+{
+    levels: Vec<Level<'a, C, S>>,
     exact: bool,
 }
 
-impl<'a, C, H> NodeRef<'a, C, H>
+impl<'a, C, S> NodeRef<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
-    pub fn new_cached(cached: Cached<'a, C>) -> Self {
-        NodeRef::Cached(cached)
+    pub fn new_shared(shared: &'a C) -> Self {
+        NodeRef::Shared(shared)
     }
 
     pub fn new_mutable(node: &'a mut C) -> Self {
         NodeRef::Mutable(node)
     }
 
-    pub fn handle(&self, idx: usize) -> io::Result<HandleRef<C, H>> {
+    pub fn handle(&self, idx: usize) -> Result<HandleRef<C, S>, S::Error> {
         Ok(match self {
-            NodeRef::Cached(ref c) => {
+            NodeRef::Shared(ref c) => {
                 if let Some(handle) = c.children().get(idx) {
                     handle.inner()?
                 } else {
@@ -104,7 +111,7 @@ where
 
     pub fn inner(&self) -> InnerImmutable<C> {
         match self {
-            NodeRef::Cached(c) => InnerImmutable::Cached(c),
+            NodeRef::Shared(c) => InnerImmutable::Shared(c),
             NodeRef::Mutable(m) => InnerImmutable::Borrowed(m),
             NodeRef::Owned(o) => InnerImmutable::Borrowed(o),
             NodeRef::Placeholder(_) => unreachable!("Placeholder"),
@@ -112,7 +119,7 @@ where
     }
 }
 
-impl<C, H> AsMut<C> for NodeRef<'_, C, H>
+impl<C, S> AsMut<C> for NodeRef<'_, C, S>
 where
     C: Clone,
 {
@@ -121,7 +128,7 @@ where
             match self {
                 NodeRef::Mutable(ref mut m) => return m,
                 NodeRef::Owned(b) => return &mut *b,
-                NodeRef::Cached(c) => {
+                NodeRef::Shared(c) => {
                     *self = NodeRef::Owned(Box::new((**c).clone()));
                 }
                 NodeRef::Placeholder(_) => unreachable!("Placeholder"),
@@ -130,47 +137,56 @@ where
     }
 }
 
-/// A reference to a cached or borrowed node
-pub enum InnerImmutable<'a, C> {
-    Cached(&'a Cached<'a, C>),
+/// A reference to a shared or borrowed node
+pub enum InnerImmutable<'a, C>
+where
+    C: Clone,
+{
+    Shared(&'a C),
     Borrowed(&'a C),
 }
 
-impl<'a, C> Deref for InnerImmutable<'a, C> {
+impl<'a, C> Deref for InnerImmutable<'a, C>
+where
+    C: Clone,
+{
     type Target = C;
 
     fn deref(&self) -> &Self::Target {
         match self {
-            InnerImmutable::Cached(ref c) => c,
+            InnerImmutable::Shared(ref c) => c,
             InnerImmutable::Borrowed(b) => b,
         }
     }
 }
 
-impl<'a, C, H> Deref for NodeRef<'a, C, H> {
+impl<'a, C, S> Deref for NodeRef<'a, C, S>
+where
+    C: Clone,
+{
     type Target = C;
 
     fn deref(&self) -> &Self::Target {
         match self {
             NodeRef::Mutable(m) => m,
             NodeRef::Owned(o) => o,
-            NodeRef::Cached(c) => c,
+            NodeRef::Shared(c) => c,
             NodeRef::Placeholder(_) => unreachable!(),
         }
     }
 }
 
-impl<'a, C, H> DerefMut for NodeRef<'a, C, H>
+impl<'a, C, S> DerefMut for NodeRef<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             NodeRef::Mutable(m) => m,
             NodeRef::Owned(o) => o,
-            NodeRef::Cached(_) => {
-                if let NodeRef::Cached(c) =
+            NodeRef::Shared(_) => {
+                if let NodeRef::Shared(c) =
                     mem::replace(self, NodeRef::Placeholder(PhantomData))
                 {
                     *self = NodeRef::Owned(Box::new(c.clone()));
@@ -185,13 +201,13 @@ where
     }
 }
 
-impl<'a, C, H> Level<'a, C, H>
+impl<'a, C, S> Level<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
     /// Returs a reference to the handle pointing to the node below in the branch
-    pub fn referencing(&self) -> io::Result<HandleRef<C, H>> {
+    pub fn referencing(&self) -> Result<HandleRef<C, S>, S::Error> {
         self.node.handle(self.ofs)
     }
 
@@ -201,27 +217,28 @@ where
         self.ofs
     }
 
-    fn new_cached(cached: Cached<'a, C>) -> Self {
+    fn new_shared(shared: &'a C) -> Self {
         Level {
             ofs: 0,
-            node: NodeRef::new_cached(cached),
+            node: NodeRef::new_shared(shared),
         }
     }
 
-    fn insert_child(&mut self, node: C) {
+    fn insert_child(&mut self, node: C) -> Result<(), S::Error> {
         match &mut self.node {
-            NodeRef::Cached(c) => {
-                self.node = NodeRef::Owned(Box::new((*c).clone()));
-                self.insert_child(node)
+            NodeRef::Shared(c) => {
+                self.node = NodeRef::Owned(Box::new((**c).clone()));
+                self.insert_child(node)?
             }
             NodeRef::Owned(o) => {
-                (**o).children_mut()[self.ofs] = Handle::new_node(node)
+                (**o).children_mut()[self.ofs] = Handle::new_node(node)?
             }
             NodeRef::Placeholder(_) => unreachable!(),
             NodeRef::Mutable(ref mut m) => {
-                m.children_mut()[self.ofs] = Handle::new_node(node)
+                m.children_mut()[self.ofs] = Handle::new_node(node)?
             }
         }
+        Ok(())
     }
 
     fn new_mutable(node: &'a mut C) -> Self {
@@ -249,7 +266,10 @@ where
             .and_then(|handle| handle.leaf_mut())
     }
 
-    fn search<M: Method<C, H>>(&mut self, method: &mut M) -> io::Result<Found> {
+    fn search<M: Method<C, S>>(
+        &mut self,
+        method: &mut M,
+    ) -> Result<Found, S::Error> {
         let node = self.inner();
         let children_len = node.children().len();
         if self.ofs + 1 > children_len {
@@ -270,7 +290,7 @@ where
     }
 }
 
-impl<C, H> AsMut<C> for Level<'_, C, H>
+impl<C, S> AsMut<C> for Level<'_, C, S>
 where
     C: Clone,
 {
@@ -279,14 +299,14 @@ where
     }
 }
 
-impl<'a, C, H> RawBranch<'a, C, H>
+impl<'a, C, S> RawBranch<'a, C, S>
 where
-    C: Compound<H>,
-    H: ByteHash,
+    C: Compound<S>,
+    S: Store,
 {
-    pub fn new_cached(node: Cached<'a, C>) -> Self {
+    pub fn new_shared(node: &'a C) -> Self {
         let mut vec = Vec::new();
-        vec.push(Level::new_cached(node));
+        vec.push(Level::new_shared(node));
         RawBranch {
             levels: vec,
             exact: false,
@@ -306,10 +326,10 @@ where
         self.exact
     }
 
-    pub fn search<M: Method<C, H>>(
+    pub fn search<M: Method<C, S>>(
         &mut self,
         method: &mut M,
-    ) -> io::Result<()> {
+    ) -> Result<(), S::Error> {
         self.exact = false;
         while let Some(last) = self.levels.last_mut() {
             let mut push = None;
@@ -319,9 +339,9 @@ where
                     break;
                 }
                 Found::Path => match last.referencing()? {
-                    HandleRef::Node(cached) => {
+                    HandleRef::Node(shared) => {
                         let level: Level<'a, _, _> = unsafe {
-                            mem::transmute(Level::new_cached(cached))
+                            mem::transmute(Level::new_shared(&*shared))
                         };
                         push = Some(level);
                     }
@@ -368,11 +388,11 @@ where
         }
     }
 
-    pub(crate) fn levels(&self) -> &[Level<'a, C, H>] {
+    pub(crate) fn levels(&self) -> &[Level<'a, C, S>] {
         &self.levels
     }
 
-    pub(crate) fn levels_mut(&mut self) -> &mut [Level<'a, C, H>] {
+    pub(crate) fn levels_mut(&mut self) -> &mut [Level<'a, C, S>] {
         &mut self.levels
     }
 
