@@ -21,24 +21,10 @@ use kelvin::{
 };
 
 fn hash<T: Hash, S: Store>(t: &T) -> S::Ident {
-    let mut ident = S::Ident::default();
-
-    // how many u64s do we fit?
-    let blocks = ident.as_ref().len() / 8;
-
-    // make sure we use an  explicit u64 for block_nr
-    for block_nr in 0..blocks as u64 {
-        let mut hasher = DefaultHasher::new();
-        // salt
-        block_nr.hash(&mut hasher);
-        t.hash(&mut hasher);
-        let bytes = hasher.finish().to_be_bytes();
-
-        let i = block_nr as usize;
-
-        ident.as_mut()[i * 8..i * 8 + 8].copy_from_slice(&bytes);
-    }
-    ident
+    let mut hasher = DefaultHasher::new();
+    t.hash(&mut hasher);
+    let bytes = hasher.finish().to_be_bytes();
+    S::Ident::from(&bytes)
 }
 
 /// Default HAMT-map without annotations
