@@ -17,15 +17,12 @@ macro_rules! annotation {
         use std::borrow::Borrow as __Borrow;
         use $crate::annotations::ErasedAnnotation as __ErasedAnnotation;
         use $crate::annotations::Combine as __Combine;
-        use $crate::{
-            Content as __Content,
-            Sink as __Sink,
-            Source as __Source,
-        };
+        use canonical::Canon as Canon;
+        use canonical_derive::Canon as Canon;
 
-        use canonical::Store as __Store;
 
         $(#[$outer])*
+        #[derive(Canon)]
         $pub struct $struct_name $( < $( $param ),* > )* {
             $ ( $ann_key : $ann_type ),*
         }
@@ -41,26 +38,6 @@ macro_rules! annotation {
                 $struct_name {
                     $( $ann_key : t.into() ),*
                 }
-            }
-        }
-
-        impl<H, $( $( $param ),* )* > __Content<S> for $struct_name $( < $( $param ),* > )*
-        where
-            H: __ByteHash,
-            $( $ann_type : __Content<S> ),*
-            $( , $( $whereclause )* )?
-
-        {
-            fn persist(&mut self, sink: &mut __Sink<S>) -> io::Result<()> {
-                $( self.$ann_key.persist(sink)? ; )*
-                Ok(())
-            }
-
-            fn restore(source: &mut __Source<S>) -> io::Result<Self> {
-                Ok($struct_name {
-                    $( $ann_key : < $ann_type as __Content<S> >::restore(source)? , )*
-                })
-
             }
         }
 
