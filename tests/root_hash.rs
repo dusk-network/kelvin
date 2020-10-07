@@ -4,12 +4,11 @@
 use kelvin::{Compound, Void};
 use kelvin_hamt::HAMT;
 
-use canonical::Store;
-use canonical_host::MemStore;
+use canonical_host::{Canon, MemStore, Store};
 
 #[test]
 fn root_hash() {
-    type Hamt = HAMT<u32, u32, Void, MemStore>;
+    type Hamt = HAMT<u32, u32, Void, MemStore, 1024>;
 
     let mut hamt = Hamt::new();
 

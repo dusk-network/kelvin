@@ -1,7 +1,7 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::borrow::{Borrow, Cow};
+use core::borrow::Borrow;
 
 use canonical::{Canon, Store};
 use canonical_derive::Canon;
@@ -32,7 +32,7 @@ where
 /// Wrapper trait for hiding generics when working on select functions
 pub trait ErasedAnnotation<A: Clone>: Clone {
     /// Returns the annotation of &self, if any.
-    fn annotation(&self) -> Option<Cow<A>>;
+    fn annotation(&self) -> Option<A>;
 }
 
 /// Defines the associative operation for the annotation type
@@ -62,11 +62,10 @@ where
         let mut iter = elements.iter().filter_map(ErasedAnnotation::annotation);
 
         iter.next().map(|first| {
-            let t: &T = (*first).borrow().borrow();
+            let t: &T = first.borrow();
             let mut s: T = t.clone();
             for next in iter {
-                let a: &A = next.borrow();
-                s.op(a.borrow())
+                s.op(next.borrow())
             }
             s
         })

@@ -1,9 +1,9 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::borrow::Borrow;
-use std::cmp::Ord;
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+use core::borrow::Borrow;
+use core::cmp::Ord;
+use core::ops::{Add, AddAssign, Sub, SubAssign};
 
 use canonical::{Canon, Store};
 use canonical_derive::Canon;
@@ -48,16 +48,16 @@ where
 }
 
 /// Trait for counting the number of elements in the collection
-pub trait Count<U, S> {
+pub trait Count<U, S, const N: usize> {
     /// Returns the number of elements in collection
     fn count(&self) -> U;
 }
 
-impl<U, C, S> Count<U, S> for C
+impl<U, C, S, const N: usize> Count<U, S, N> for C
 where
     U: Counter,
     S: Store,
-    C: Compound<S>,
+    C: Compound<S, N>,
     C::Annotation: Borrow<Cardinality<U>>,
 {
     fn count(&self) -> U {
@@ -77,9 +77,9 @@ impl<U> Nth<U> {
     }
 }
 
-impl<'a, C, U, S> Method<C, S> for Nth<U>
+impl<'a, C, U, S, const N: usize> Method<C, S, N> for Nth<U>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     C::Annotation: Borrow<Cardinality<U>>,
     S: Store,
     U: Counter,
@@ -96,7 +96,7 @@ where
                 }
                 HandleType::Node => {
                     if let Some(annotation) = child.annotation() {
-                        let c: &Cardinality<U> = (*annotation).borrow();
+                        let c: &Cardinality<U> = annotation.borrow();
                         if self.0 >= c.0 {
                             self.0 -= c.0
                         } else {
@@ -113,22 +113,22 @@ where
 }
 
 /// Trait for finding the nth element of a collection
-pub trait GetNth<U, S>: Sized + Clone
+pub trait GetNth<U, S, const N: usize>: Sized + Clone
 where
     S: Store,
 {
     /// Returns a branch to the n:th element, if any
-    fn nth(&self, i: U) -> Result<Option<Branch<Self, S>>, S::Error>;
+    fn nth(&self, i: U) -> Result<Option<Branch<Self, S, N>>, S::Error>;
 }
 
-impl<C, U, S> GetNth<U, S> for C
+impl<C, U, S, const N: usize> GetNth<U, S, N> for C
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     C::Annotation: Borrow<Cardinality<U>>,
     U: Counter,
     S: Store,
 {
-    fn nth(&self, i: U) -> Result<Option<Branch<Self, S>>, S::Error> {
+    fn nth(&self, i: U) -> Result<Option<Branch<Self, S, N>>, S::Error> {
         Branch::new(self, &mut Nth::new(i))
     }
 }

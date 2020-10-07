@@ -9,7 +9,7 @@ use crate::handle::Handle;
 use crate::search::Method;
 
 /// A trait for tree-like structures containing leaves
-pub trait Compound<S>: Canon<S> + Clone + Default
+pub trait Compound<S, const N: usize>: Canon<S> + Clone + Default
 where
     S: Store,
 {
@@ -22,10 +22,10 @@ where
         + for<'l> From<&'l Self::Leaf>;
 
     /// Returns handles to the children of the node
-    fn children(&self) -> &[Handle<Self, S>];
+    fn children(&self) -> &[Handle<Self, S, N>];
 
     /// Returns mutable handles to the children of the node
-    fn children_mut(&mut self) -> &mut [Handle<Self, S>];
+    fn children_mut(&mut self) -> &mut [Handle<Self, S, N>];
 
     /// Returns the annotation of Compound, if not empty
     fn annotation(&self) -> Option<Self::Annotation> {
@@ -34,20 +34,20 @@ where
 
     /// Seach in the tree structure, with the provided method.
     /// Returns None if nothing was found, otherwise a branc pointing to the element found
-    fn search<M: Method<Self, S>>(
+    fn search<M: Method<Self, S, N>>(
         &self,
         m: &mut M,
-    ) -> Result<Option<Branch<Self, S>>, S::Error> {
+    ) -> Result<Option<Branch<Self, S, N>>, S::Error> {
         Branch::new(self, m)
     }
 
     /// Seach in the tree structure, with the provided method.
     /// Returns None if nothing was found, otherwise a mutable branch pointing to
     /// the element found
-    fn search_mut<M: Method<Self, S>>(
+    fn search_mut<M: Method<Self, S, N>>(
         &mut self,
         m: &mut M,
-    ) -> Result<Option<BranchMut<Self, S>>, S::Error> {
+    ) -> Result<Option<BranchMut<Self, S, N>>, S::Error> {
         BranchMut::new(self, m)
     }
 

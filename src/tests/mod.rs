@@ -1,13 +1,14 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-mod fuzz;
+#[cfg(test)]
+extern crate std;
+
 mod quickcheck_map;
 mod quickcheck_stack;
 
 use crate::{Compound, HandleType};
 pub use arbitrary;
-pub use fuzz::{fuzz_content, fuzz_content_iterations};
 pub use quickcheck;
 pub use rand;
 pub use tempfile;
@@ -15,14 +16,14 @@ pub use tempfile;
 use canonical::Store;
 
 /// Trait to test for correct empty state of a structure
-pub trait CorrectEmptyState<Se> {
+pub trait CorrectEmptyState<Se, const N: usize> {
     /// Make sure the collection is properly empty
     fn assert_correct_empty_state(&self);
 }
 
-impl<C, S> CorrectEmptyState<S> for C
+impl<C, S, const N: usize> CorrectEmptyState<S, N> for C
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     fn assert_correct_empty_state(&self) {

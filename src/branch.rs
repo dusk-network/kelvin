@@ -1,7 +1,7 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::ops::{Deref, DerefMut};
+use core::ops::{Deref, DerefMut};
 
 use canonical::Store;
 
@@ -9,26 +9,26 @@ use crate::compound::Compound;
 use crate::raw_branch::{Level, RawBranch};
 use crate::search::Method;
 
-/// A branch into a `Compound<S>`
+/// A branch into a `Compound<S, N>`
 /// The Branch is guaranteed to always point to a leaf
 #[derive(Debug)]
-pub struct Branch<'a, C, S>(RawBranch<'a, C, S>)
+pub struct Branch<'a, C, S, const N: usize>(RawBranch<'a, C, S, N>)
 where
     C: Clone;
 
-impl<'a, C, S> Branch<'a, C, S>
+impl<'a, C, S, const N: usize> Branch<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     /// Attempt to construct a branch with the given search method
-    pub fn new<M: Method<C, S>>(
+    pub fn new<M: Method<C, S, N>>(
         node: &'a C,
         method: &mut M,
     ) -> Result<Option<Self>, S::Error>
     where
         C: Clone,
-        M: Method<C, S>,
+        M: Method<C, S, N>,
     {
         let mut inner = RawBranch::new_shared(node);
         inner.search(method)?;
@@ -47,7 +47,7 @@ where
     /// Search for the next value in the branch, using `method`
     ///
     /// Takes self by value, and returns the updated branch or `None`
-    pub fn search<M: Method<C, S>>(
+    pub fn search<M: Method<C, S, N>>(
         mut self,
         method: &mut M,
     ) -> Result<Option<Self>, S::Error> {
@@ -61,14 +61,14 @@ where
     }
 
     /// Returns a reference to the levels of the branch
-    pub fn levels(&self) -> &[Level<'a, C, S>] {
+    pub fn levels(&self) -> &[Level<'a, C, S, N>] {
         self.0.levels()
     }
 }
 
-impl<'a, C, S> Deref for Branch<'a, C, S>
+impl<'a, C, S, const N: usize> Deref for Branch<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     type Target = C::Leaf;
@@ -81,14 +81,14 @@ where
 /// A mutable branch into a `Compound<S>`
 /// The BranchMut is guaranteed to always point to a leaf
 #[derive(Debug)]
-pub struct BranchMut<'a, C, S>(RawBranch<'a, C, S>)
+pub struct BranchMut<'a, C, S, const N: usize>(RawBranch<'a, C, S, N>)
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store;
 
-impl<'a, C, S> BranchMut<'a, C, S>
+impl<'a, C, S, const N: usize> BranchMut<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     ///
@@ -97,7 +97,7 @@ where
         method: &mut M,
     ) -> Result<Option<Self>, S::Error>
     where
-        M: Method<C, S>,
+        M: Method<C, S, N>,
     {
         let mut inner = RawBranch::new_mutable(node);
         inner.search(method)?;
@@ -115,7 +115,7 @@ where
     /// Search for the next value in the branch, using `method`
     ///
     /// Takes self by value, and returns the updated branch or `None`
-    pub fn search<M: Method<C, S>>(
+    pub fn search<M: Method<C, S, N>>(
         mut self,
         method: &mut M,
     ) -> Result<Option<Self>, S::Error> {
@@ -129,19 +129,19 @@ where
     }
 
     /// Returns a reference to the levels of the branch
-    pub fn levels(&self) -> &[Level<'a, C, S>] {
+    pub fn levels(&self) -> &[Level<'a, C, S, N>] {
         self.0.levels()
     }
 
     /// Returns a reference to the levels of the branch
-    pub fn levels_mut(&mut self) -> &mut [Level<'a, C, S>] {
+    pub fn levels_mut(&mut self) -> &mut [Level<'a, C, S, N>] {
         self.0.levels_mut()
     }
 }
 
-impl<'a, C, S> Drop for BranchMut<'a, C, S>
+impl<'a, C, S, const N: usize> Drop for BranchMut<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     fn drop(&mut self) {
@@ -149,9 +149,9 @@ where
     }
 }
 
-impl<'a, C, S> Deref for BranchMut<'a, C, S>
+impl<'a, C, S, const N: usize> Deref for BranchMut<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     type Target = C::Leaf;
@@ -161,9 +161,9 @@ where
     }
 }
 
-impl<'a, C, S> DerefMut for BranchMut<'a, C, S>
+impl<'a, C, S, const N: usize> DerefMut for BranchMut<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
     C::Leaf: 'a,
 {

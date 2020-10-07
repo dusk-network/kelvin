@@ -6,6 +6,7 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 use appendix::Index;
+use arrayvec::ArrayVec;
 use canonical::Store;
 
 use crate::backend::{Backend, PutResult};
@@ -67,7 +68,11 @@ impl<S: Store> Backend<S> for DiskBackend<S> {
         }
     }
 
-    fn put(&mut self, hash: S::Ident, bytes: Vec<u8>) -> io::Result<PutResult> {
+    fn put(
+        &mut self,
+        hash: S::Ident,
+        bytes: ArrayVec,
+    ) -> io::Result<PutResult> {
         if self.index.insert(hash, self.data_offset)? {
             // value already present
             Ok(PutResult::AlreadyThere)

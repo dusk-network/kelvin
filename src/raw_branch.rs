@@ -1,15 +1,17 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::marker::PhantomData;
-use std::mem;
-use std::ops::{Deref, DerefMut};
+use core::marker::PhantomData;
+use core::mem;
+use core::ops::{Deref, DerefMut};
 
 use canonical::Store;
 
 use crate::compound::Compound;
 use crate::handle::{Handle, HandleRef};
 use crate::search::{Method, SearchResult};
+
+use const_arrayvec::ArrayVec;
 
 pub enum Found {
     Leaf,
@@ -18,29 +20,29 @@ pub enum Found {
 }
 
 #[derive(Debug)]
-enum NodeRef<'a, C, S>
+enum NodeRef<'a, C, S, const N: usize>
 where
     C: Clone,
 {
     Shared(&'a C),
     Mutable(&'a mut C),
-    Owned(Box<C>),
+    Owned(C),
     Placeholder(PhantomData<S>),
 }
 
 /// Represents a level in a branch
 #[derive(Debug)]
-pub struct Level<'a, C, S>
+pub struct Level<'a, C, S, const N: usize>
 where
     C: Clone,
 {
     ofs: usize,
-    node: NodeRef<'a, C, S>,
+    node: NodeRef<'a, C, S, N>,
 }
 
-impl<'a, C, S> Deref for Level<'a, C, S>
+impl<'a, C, S, const N: usize> Deref for Level<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     type Target = C;
@@ -50,9 +52,9 @@ where
     }
 }
 
-impl<'a, C, S> DerefMut for Level<'a, C, S>
+impl<'a, C, S, const N: usize> DerefMut for Level<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -61,19 +63,23 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) struct RawBranch<'a, C, S>
+pub(crate) struct RawBranch<'a, C, S, const N: usize>
 where
     C: Clone,
 {
-    levels: Vec<Level<'a, C, S>>,
+    levels: ArrayVec<Level<'a, C, S, N>, N>,
     exact: bool,
 }
 
-impl<'a, C, S> NodeRef<'a, C, S>
+impl<'a, C, S, const N: usize> NodeRef<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
+    pub fn new_owned(owned: C) -> Self {
+        NodeRef::Owned(owned)
+    }
+
     pub fn new_shared(shared: &'a C) -> Self {
         NodeRef::Shared(shared)
     }
@@ -82,7 +88,7 @@ where
         NodeRef::Mutable(node)
     }
 
-    pub fn handle(&self, idx: usize) -> Result<HandleRef<C, S>, S::Error> {
+    pub fn handle(&self, idx: usize) -> Result<HandleRef<C, S, N>, S::Error> {
         Ok(match self {
             NodeRef::Shared(ref c) => {
                 if let Some(handle) = c.children().get(idx) {
@@ -99,7 +105,7 @@ where
                 }
             }
             NodeRef::Owned(o) => {
-                if let Some(handle) = (**o).children().get(idx) {
+                if let Some(handle) = (o).children().get(idx) {
                     handle.inner()?
                 } else {
                     HandleRef::None
@@ -119,7 +125,7 @@ where
     }
 }
 
-impl<C, S> AsMut<C> for NodeRef<'_, C, S>
+impl<C, S, const N: usize> AsMut<C> for NodeRef<'_, C, S, N>
 where
     C: Clone,
 {
@@ -129,7 +135,7 @@ where
                 NodeRef::Mutable(ref mut m) => return m,
                 NodeRef::Owned(b) => return &mut *b,
                 NodeRef::Shared(c) => {
-                    *self = NodeRef::Owned(Box::new((**c).clone()));
+                    *self = NodeRef::Owned(c.clone());
                 }
                 NodeRef::Placeholder(_) => unreachable!("Placeholder"),
             }
@@ -160,7 +166,7 @@ where
     }
 }
 
-impl<'a, C, S> Deref for NodeRef<'a, C, S>
+impl<'a, C, S, const N: usize> Deref for NodeRef<'a, C, S, N>
 where
     C: Clone,
 {
@@ -176,9 +182,9 @@ where
     }
 }
 
-impl<'a, C, S> DerefMut for NodeRef<'a, C, S>
+impl<'a, C, S, const N: usize> DerefMut for NodeRef<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -189,7 +195,7 @@ where
                 if let NodeRef::Shared(c) =
                     mem::replace(self, NodeRef::Placeholder(PhantomData))
                 {
-                    *self = NodeRef::Owned(Box::new(c.clone()));
+                    *self = NodeRef::Owned(c.clone());
                 } else {
                     unreachable!()
                 }
@@ -201,13 +207,13 @@ where
     }
 }
 
-impl<'a, C, S> Level<'a, C, S>
+impl<'a, C, S, const N: usize> Level<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     /// Returs a reference to the handle pointing to the node below in the branch
-    pub fn referencing(&self) -> Result<HandleRef<C, S>, S::Error> {
+    pub fn referencing(&self) -> Result<HandleRef<C, S, N>, S::Error> {
         self.node.handle(self.ofs)
     }
 
@@ -215,6 +221,13 @@ where
     /// i.e the node that references the level below.
     pub fn offset(&self) -> usize {
         self.ofs
+    }
+
+    fn new_owned(owned: C) -> Self {
+        Level {
+            ofs: 0,
+            node: NodeRef::new_owned(owned),
+        }
     }
 
     fn new_shared(shared: &'a C) -> Self {
@@ -227,11 +240,11 @@ where
     fn insert_child(&mut self, node: C) -> Result<(), S::Error> {
         match &mut self.node {
             NodeRef::Shared(c) => {
-                self.node = NodeRef::Owned(Box::new((**c).clone()));
+                self.node = NodeRef::Owned((c).clone());
                 self.insert_child(node)?
             }
             NodeRef::Owned(o) => {
-                (**o).children_mut()[self.ofs] = Handle::new_node(node)?
+                o.children_mut()[self.ofs] = Handle::new_node(node)?
             }
             NodeRef::Placeholder(_) => unreachable!(),
             NodeRef::Mutable(ref mut m) => {
@@ -266,7 +279,7 @@ where
             .and_then(|handle| handle.leaf_mut())
     }
 
-    fn search<M: Method<C, S>>(
+    fn search<M: Method<C, S, N>>(
         &mut self,
         method: &mut M,
     ) -> Result<Found, S::Error> {
@@ -290,7 +303,7 @@ where
     }
 }
 
-impl<C, S> AsMut<C> for Level<'_, C, S>
+impl<C, S, const N: usize> AsMut<C> for Level<'_, C, S, N>
 where
     C: Clone,
 {
@@ -299,13 +312,13 @@ where
     }
 }
 
-impl<'a, C, S> RawBranch<'a, C, S>
+impl<'a, C, S, const N: usize> RawBranch<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     pub fn new_shared(node: &'a C) -> Self {
-        let mut vec = Vec::new();
+        let mut vec: ArrayVec<Level<'a, C, S, N>, N> = ArrayVec::new();
         vec.push(Level::new_shared(node));
         RawBranch {
             levels: vec,
@@ -314,7 +327,7 @@ where
     }
 
     pub fn new_mutable(node: &'a mut C) -> Self {
-        let mut vec = Vec::new();
+        let mut vec = ArrayVec::<_, N>::new();
         vec.push(Level::new_mutable(node));
         RawBranch {
             levels: vec,
@@ -326,7 +339,7 @@ where
         self.exact
     }
 
-    pub fn search<M: Method<C, S>>(
+    pub fn search<M: Method<C, S, N>>(
         &mut self,
         method: &mut M,
     ) -> Result<(), S::Error> {
@@ -340,9 +353,8 @@ where
                 }
                 Found::Path => match last.referencing()? {
                     HandleRef::Node(shared) => {
-                        let level: Level<'a, _, _> = unsafe {
-                            mem::transmute(Level::new_shared(&*shared))
-                        };
+                        let level: Level<'a, C, S, N> =
+                            Level::new_owned(shared.clone());
                         push = Some(level);
                     }
                     _ => break,
@@ -388,11 +400,11 @@ where
         }
     }
 
-    pub(crate) fn levels(&self) -> &[Level<'a, C, S>] {
+    pub(crate) fn levels(&self) -> &[Level<'a, C, S, N>] {
         &self.levels
     }
 
-    pub(crate) fn levels_mut(&mut self) -> &mut [Level<'a, C, S>] {
+    pub(crate) fn levels_mut(&mut self) -> &mut [Level<'a, C, S, N>] {
         &mut self.levels
     }
 
@@ -401,7 +413,7 @@ where
             if !self.levels.is_empty() {
                 if let NodeRef::Owned(o) = popped.node {
                     let last = self.levels.last_mut().expect("length < 1");
-                    last.insert_child(*o);
+                    last.insert_child(o);
                 }
             }
             true

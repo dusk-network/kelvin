@@ -1,7 +1,7 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::mem;
+use core::mem;
 
 use canonical::Store;
 
@@ -10,20 +10,20 @@ use crate::compound::Compound;
 use crate::search::{First, Method};
 
 /// An iterator over the leaves of a Compound type
-pub enum LeafIter<'a, C, M, S>
+pub enum LeafIter<'a, C, M, S, const N: usize>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     Initial(&'a C, M),
-    Branch(Branch<'a, C, S>, M),
+    Branch(Branch<'a, C, S, N>, M),
     Exhausted,
 }
 
-impl<'a, C, M, S> Iterator for LeafIter<'a, C, M, S>
+impl<'a, C, M, S, const N: usize> Iterator for LeafIter<'a, C, M, S, N>
 where
-    C: Compound<S>,
-    M: 'a + Method<C, S>,
+    C: Compound<S, N>,
+    M: 'a + Method<C, S, N>,
     S: Store,
     C::Leaf: 'a,
 {
@@ -65,20 +65,20 @@ where
     }
 }
 
-pub enum LeafIterMut<'a, C, M, S>
+pub enum LeafIterMut<'a, C, M, S, const N: usize>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     Initial(&'a mut C, M),
-    Branch(BranchMut<'a, C, S>, M),
+    Branch(BranchMut<'a, C, S, N>, M),
     Exhausted,
 }
 
-impl<'a, C, M, S> Iterator for LeafIterMut<'a, C, M, S>
+impl<'a, C, M, S, const N: usize> Iterator for LeafIterMut<'a, C, M, S, N>
 where
-    C: Compound<S>,
-    M: 'a + Method<C, S>,
+    C: Compound<S, N>,
+    M: 'a + Method<C, S, N>,
     S: Store,
     C::Leaf: 'a,
 {
@@ -121,27 +121,27 @@ where
 }
 
 /// Trait for iterating over the leaves of a Compuond
-pub trait LeafIterable<S>
+pub trait LeafIterable<S, const N: usize>
 where
-    Self: Compound<S>,
+    Self: Compound<S, N>,
     S: Store,
 {
     /// Returns an iterator over the leaves of the Compound
-    fn iter(&self) -> LeafIter<Self, First, S>;
+    fn iter(&self) -> LeafIter<Self, First, S, N>;
     /// Returns an iterator over the mutable leaves of the Compound
-    fn iter_mut(&mut self) -> LeafIterMut<Self, First, S>;
+    fn iter_mut(&mut self) -> LeafIterMut<Self, First, S, N>;
 }
 
-impl<C, S> LeafIterable<S> for C
+impl<C, S, const N: usize> LeafIterable<S, N> for C
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
-    fn iter(&self) -> LeafIter<Self, First, S> {
+    fn iter(&self) -> LeafIter<Self, First, S, N> {
         LeafIter::Initial(self, First)
     }
 
-    fn iter_mut(&mut self) -> LeafIterMut<Self, First, S> {
+    fn iter_mut(&mut self) -> LeafIterMut<Self, First, S, N> {
         LeafIterMut::Initial(self, First)
     }
 }

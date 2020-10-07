@@ -3,6 +3,8 @@
 
 //! Kelvin, a Merkle-tree tooklit and backend
 #![warn(missing_docs)]
+#![cfg_attr(feature = "no_std", no_std)]
+#![feature(min_const_generics)]
 
 /// Test helpers
 pub mod tests;
@@ -26,7 +28,7 @@ pub use crate::annotations::{
 };
 pub use crate::branch::{Branch, BranchMut};
 pub use crate::compound::Compound;
-pub use crate::debug_draw::{DebugDraw, DrawState};
+// pub use crate::debug_draw::{DebugDraw, DrawState};
 pub use crate::handle::{
     Handle, HandleMut, HandleMutLeaf, HandleMutNode, HandleMutNone, HandleRef,
     HandleType,

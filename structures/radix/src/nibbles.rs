@@ -4,7 +4,7 @@
 use std::cmp;
 use std::fmt;
 use std::io::{self, Write};
-use std::mem;
+use core::mem;
 
 use kelvin::{tests::arbitrary, ByteHash, Content, Sink, Source};
 

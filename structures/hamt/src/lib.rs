@@ -3,13 +3,14 @@
 
 //! A Hash-array mapped trie implemented on kelvin
 #![warn(missing_docs)]
+#![feature(min_const_generics)]
 
-use std::borrow::Borrow;
+use core::borrow::Borrow;
+use core::hash::{Hash, Hasher};
+use core::marker::PhantomData;
+use core::mem;
 use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::iter::Iterator;
-use std::marker::PhantomData;
-use std::mem;
 
 use canonical::{Canon, Store};
 use canonical_derive::Canon;
@@ -42,20 +43,21 @@ fn hash<T: Hash, S: Store>(t: &T) -> S::Ident {
 }
 
 /// Default HAMT-map without annotations
-pub type DefaultHAMTMap<K, V, S> = HAMT<K, V, Void, S>;
+pub type DefaultHAMTMap<K, V, S, const N: usize> = HAMT<K, V, Void, S, N>;
 /// Default HAMT-map with Cardinality annotation (for `.count()`)
-pub type CountingHAMTMap<K, V, S> = HAMT<K, V, Cardinality<u64>, S>;
+pub type CountingHAMTMap<K, V, S, const N: usize> =
+    HAMT<K, V, Cardinality<u64>, S, N>;
 
 /// A hash array mapped trie with branching factor of 16
 #[derive(Clone, Canon)]
-pub struct HAMT<K, V, A, S>([Handle<Self, S>; 16])
+pub struct HAMT<K, V, A, S, const N: usize>([Handle<Self, S, N>; 16])
 where
     K: Canon<S> + Clone,
     V: Canon<S> + Clone,
     A: Annotation<KV<K, V>, S>,
     S: Store;
 
-impl<K, V, A, S> Default for HAMT<K, V, A, S>
+impl<K, V, A, S, const N: usize> Default for HAMT<K, V, A, S, N>
 where
     K: Canon<S> + Clone,
     V: Canon<S> + Clone,
@@ -69,14 +71,14 @@ where
 
 /// A hash array mapped trie with branching factor of 4
 #[derive(Clone, Canon)]
-pub struct NarrowHAMT<K, V, A, S>([Handle<Self, S>; 4])
+pub struct NarrowHAMT<K, V, A, S, const N: usize>([Handle<Self, S, N>; 4])
 where
     K: Canon<S> + Clone,
     V: Canon<S> + Clone,
     A: Annotation<KV<K, V>, S>,
     S: Store;
 
-impl<K, V, A, S> Default for NarrowHAMT<K, V, A, S>
+impl<K, V, A, S, const N: usize> Default for NarrowHAMT<K, V, A, S, N>
 where
     K: Canon<S> + Clone,
     V: Canon<S> + Clone,
@@ -96,7 +98,8 @@ pub trait SlotSelect {
 }
 
 // Trait to abstract over the width of the HAMT
-trait HAMTTrait<K, V, S>: Compound<S> + Default + SlotSelect
+trait HAMTTrait<K, V, S, const N: usize>:
+    Compound<S, N> + Default + SlotSelect
 where
     S: Store,
     K: Eq + Hash + Clone,
@@ -267,10 +270,10 @@ where
     }
 }
 
-impl<'a, K, V, A, O, S> Method<HAMT<K, V, A, S>, S>
+impl<'a, K, V, A, O, S, const N: usize> Method<HAMT<K, V, A, S, N>, S, N>
     for HAMTSearch<'a, K, V, O, S>
 where
-    HAMT<K, V, A, S>: SlotSelect,
+    HAMT<K, V, A, S, { N }>: SlotSelect,
     K: Borrow<O> + Canon<S> + Eq + Hash + Clone,
     V: Canon<S> + Clone,
     A: Annotation<KV<K, V>, S>,
@@ -279,7 +282,7 @@ where
 {
     fn select(
         &mut self,
-        compound: &HAMT<K, V, A, S>,
+        compound: &HAMT<K, V, A, S, { N }>,
         _: usize,
     ) -> SearchResult {
         let slot = HAMT::select_slot(self.hash.as_ref(), self.depth);
@@ -293,10 +296,10 @@ where
     }
 }
 
-impl<'a, K, V, A, O, S> Method<NarrowHAMT<K, V, A, S>, S>
+impl<'a, K, V, A, O, S, const N: usize> Method<NarrowHAMT<K, V, A, S, N>, S, N>
     for HAMTSearch<'a, K, V, O, S>
 where
-    NarrowHAMT<K, V, A, S>: SlotSelect,
+    NarrowHAMT<K, V, A, S, { N }>: SlotSelect,
     K: Borrow<O> + Canon<S> + Eq + Hash + Clone,
     V: Canon<S> + Clone,
     A: Annotation<KV<K, V>, S>,
@@ -305,7 +308,7 @@ where
 {
     fn select(
         &mut self,
-        compound: &NarrowHAMT<K, V, A, S>,
+        compound: &NarrowHAMT<K, V, A, S, N>,
         _: usize,
     ) -> SearchResult {
         let slot = NarrowHAMT::select_slot(self.hash.as_ref(), self.depth);
@@ -325,7 +328,7 @@ enum Removed<L> {
     Collapse(L, L),
 }
 
-impl<K, V, A, S> HAMTTrait<K, V, S> for HAMT<K, V, A, S>
+impl<K, V, A, S, const N: usize> HAMTTrait<K, V, S, N> for HAMT<K, V, A, S, N>
 where
     K: Canon<S> + Eq + Hash + Clone,
     V: Canon<S> + Clone,
@@ -334,7 +337,8 @@ where
 {
 }
 
-impl<K, V, A, S> HAMTTrait<K, V, S> for NarrowHAMT<K, V, A, S>
+impl<K, V, A, S, const N: usize> HAMTTrait<K, V, S, N>
+    for NarrowHAMT<K, V, A, S, N>
 where
     K: Canon<S> + Eq + Hash + Clone,
     V: Canon<S> + Clone,
@@ -343,7 +347,7 @@ where
 {
 }
 
-impl<K, V, A, S> SlotSelect for HAMT<K, V, A, S>
+impl<K, V, A, S, const N: usize> SlotSelect for HAMT<K, V, A, S, N>
 where
     K: Canon<S> + Clone,
     V: Canon<S> + Clone,
@@ -360,7 +364,7 @@ where
     }
 }
 
-impl<K, V, A, S> SlotSelect for NarrowHAMT<K, V, A, S>
+impl<K, V, A, S, const N: usize> SlotSelect for NarrowHAMT<K, V, A, S, N>
 where
     K: Canon<S> + Clone,
     V: Canon<S> + Clone,
@@ -380,7 +384,7 @@ where
     }
 }
 
-impl<K, V, A, S> HAMT<K, V, A, S>
+impl<K, V, A, S, const N: usize> HAMT<K, V, A, S, N>
 where
     K: Canon<S> + Clone + Eq + Hash,
     V: Canon<S> + Clone,
@@ -401,7 +405,7 @@ where
     pub fn get<O>(
         &self,
         k: &O,
-    ) -> Result<Option<ValPath<K, V, Self, S>>, S::Error>
+    ) -> Result<Option<ValPath<K, V, Self, S, { N }>>, S::Error>
     where
         O: ?Sized + Hash + Eq,
         K: Borrow<O>,
@@ -413,7 +417,7 @@ where
     pub fn get_mut<O>(
         &mut self,
         k: &O,
-    ) -> Result<Option<ValPathMut<K, V, Self, S>>, S::Error>
+    ) -> Result<Option<ValPathMut<K, V, Self, S, { N }>>, S::Error>
     where
         O: ?Sized + Hash + Eq,
         K: Borrow<O>,
@@ -435,7 +439,7 @@ where
     }
 }
 
-impl<K, V, A, S> NarrowHAMT<K, V, A, S>
+impl<K, V, A, S, const N: usize> NarrowHAMT<K, V, A, S, N>
 where
     K: Canon<S> + Clone + Eq + Hash,
     V: Canon<S> + Clone,
@@ -456,7 +460,7 @@ where
     pub fn get<O>(
         &self,
         k: &O,
-    ) -> Result<Option<ValPath<K, V, Self, S>>, S::Error>
+    ) -> Result<Option<ValPath<K, V, Self, S, { N }>>, S::Error>
     where
         O: ?Sized + Hash + Eq,
         K: Borrow<O>,
@@ -468,7 +472,7 @@ where
     pub fn get_mut<O>(
         &mut self,
         k: &O,
-    ) -> Result<Option<ValPathMut<K, V, Self, S>>, S::Error>
+    ) -> Result<Option<ValPathMut<K, V, Self, S, { N }>>, S::Error>
     where
         O: ?Sized + Hash + Eq,
         K: Borrow<O>,
@@ -490,7 +494,7 @@ where
     }
 }
 
-impl<K, V, A, S> Compound<S> for HAMT<K, V, A, S>
+impl<K, V, A, S, const N: usize> Compound<S, N> for HAMT<K, V, A, S, N>
 where
     K: Canon<S> + Clone,
     V: Canon<S> + Clone,
@@ -500,16 +504,16 @@ where
     type Leaf = KV<K, V>;
     type Annotation = A;
 
-    fn children_mut(&mut self) -> &mut [Handle<Self, S>] {
+    fn children_mut(&mut self) -> &mut [Handle<Self, S, N>] {
         &mut self.0
     }
 
-    fn children(&self) -> &[Handle<Self, S>] {
+    fn children(&self) -> &[Handle<Self, S, N>] {
         &self.0
     }
 }
 
-impl<K, V, A, S> Compound<S> for NarrowHAMT<K, V, A, S>
+impl<K, V, A, S, const N: usize> Compound<S, N> for NarrowHAMT<K, V, A, S, N>
 where
     K: Canon<S> + Clone,
     V: Canon<S> + Clone,
@@ -519,11 +523,11 @@ where
     type Leaf = KV<K, V>;
     type Annotation = A;
 
-    fn children_mut(&mut self) -> &mut [Handle<Self, S>] {
+    fn children_mut(&mut self) -> &mut [Handle<Self, S, N>] {
         &mut self.0
     }
 
-    fn children(&self) -> &[Handle<Self, S>] {
+    fn children(&self) -> &[Handle<Self, S, N>] {
         &self.0
     }
 }

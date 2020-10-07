@@ -5,7 +5,7 @@
 #![warn(missing_docs)]
 
 use std::io::{self};
-use std::mem;
+use core::mem;
 
 mod nibbles;
 
@@ -408,7 +408,7 @@ mod test {
 
     use std::collections::hash_map::DefaultHasher;
     use std::fmt;
-    use std::hash::{Hash, Hasher};
+    use core::hash::{Hash, Hasher};
 
     use kelvin::{
         annotations::Cardinality, quickcheck_map, tests::CorrectEmptyState,

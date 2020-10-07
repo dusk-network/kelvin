@@ -18,9 +18,9 @@ pub enum SearchResult {
 }
 
 /// Trait for searching through tree structured data
-pub trait Method<C, S>
+pub trait Method<C, S, const N: usize>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     /// Select among the handles of the node, indexed from `offset`
@@ -30,14 +30,14 @@ where
 #[derive(Clone)]
 pub struct First;
 
-impl<C, S> Method<C, S> for First
+impl<C, S, const N: usize> Method<C, S, N> for First
 where
     S: Store,
-    C: Compound<S>,
+    C: Compound<S, N>,
 {
     fn select(&mut self, compound: &C, offset: usize) -> SearchResult
     where
-        C: Compound<S>,
+        C: Compound<S, N>,
         S: Store,
     {
         for (i, h) in compound.children()[offset..].iter().enumerate() {

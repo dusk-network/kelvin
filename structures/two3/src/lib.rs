@@ -4,9 +4,9 @@
 //! A 2-3 Tree implemented on kelvin
 #![warn(missing_docs)]
 
-use std::borrow::Borrow;
-use std::marker::PhantomData;
-use std::mem;
+use core::borrow::Borrow;
+use core::marker::PhantomData;
+use core::mem;
 
 use arrayvec::ArrayVec;
 

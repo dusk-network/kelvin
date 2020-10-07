@@ -1,22 +1,21 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::borrow::Cow;
-use std::fmt;
-use std::mem;
-use std::ops::{Deref, DerefMut};
+use core::fmt;
+use core::mem;
+use core::ops::{Deref, DerefMut};
 
 use canonical::{Canon, Repr, Store};
 use canonical_derive::Canon;
 
 use crate::annotations::ErasedAnnotation;
 use crate::compound::Compound;
-use crate::debug_draw::{DebugDraw, DrawState};
+// use crate::debug_draw::{DebugDraw, DrawState};
 
 #[derive(Canon, Clone)]
-enum HandleInner<C, S>
+enum HandleInner<C, S, const N: usize>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     Leaf(C::Leaf),
@@ -37,14 +36,14 @@ pub enum HandleType {
 
 /// The user-facing type for handles, the main type to build trees
 #[derive(Clone, Canon)]
-pub struct Handle<C, S>(HandleInner<C, S>)
+pub struct Handle<C, S, const N: usize>(HandleInner<C, S, N>)
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store;
 
-impl<C, S> fmt::Debug for Handle<C, S>
+impl<C, S, const N: usize> fmt::Debug for Handle<C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
     C::Leaf: fmt::Debug,
 {
@@ -58,28 +57,29 @@ where
 }
 
 /// User facing reference to a handle
-pub enum HandleRef<'a, C, S>
+pub enum HandleRef<'a, C, S, const N: usize>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     /// Handle points at a Leaf
     Leaf(&'a C::Leaf),
     /// Handle points at a cached Node
-    Node(Cow<'a, C>),
+    Node(C),
     /// Handle points at nothing
     None,
 }
 
-impl<'a, C, S> Drop for HandleMut<'a, C, S>
+impl<'a, C, S, const N: usize> Drop for HandleMut<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     fn drop(&mut self) {
         if let HandleMut::Node(nodewrap) = self {
             if let HandleInner::Node(repr, ann) = nodewrap.inner {
-                if let Ok(Some(annotation)) = repr.val().map(|v| v.annotation())
+                if let Ok(Some(annotation)) =
+                    repr.restore().map(|v| v.annotation())
                 {
                     *ann = annotation
                 }
@@ -88,9 +88,9 @@ where
     }
 }
 
-impl<C, S> Default for Handle<C, S>
+impl<C, S, const N: usize> Default for Handle<C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     fn default() -> Self {
@@ -221,30 +221,30 @@ where
 // }
 
 /// A mutable reference to an empty `Handle`
-pub struct HandleMutNone<'a, C, S>
+pub struct HandleMutNone<'a, C, S, const N: usize>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
-    inner: &'a mut HandleInner<C, S>,
+    inner: &'a mut HandleInner<C, S, N>,
 }
 
 /// A mutable reference to a `Handle` containing a leaf
-pub struct HandleMutLeaf<'a, C, S>
+pub struct HandleMutLeaf<'a, C, S, const N: usize>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
-    inner: &'a mut HandleInner<C, S>,
+    inner: &'a mut HandleInner<C, S, N>,
 }
 
 /// A mutable reference to a `Handle` containing a node
-pub struct HandleMutNode<'a, C, S>
+pub struct HandleMutNode<'a, C, S, const N: usize>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
-    inner: &'a mut HandleInner<C, S>,
+    inner: &'a mut HandleInner<C, S, N>,
 }
 
 // impl<'a, C, S> Deref for HandleMutNode<'a, C, S>
@@ -265,9 +265,9 @@ where
 //     }
 // }
 
-impl<'a, C, S> Deref for HandleMutLeaf<'a, C, S>
+impl<'a, C, S, const N: usize> Deref for HandleMutLeaf<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     type Target = C::Leaf;
@@ -280,9 +280,9 @@ where
     }
 }
 
-impl<'a, C, S> DerefMut for HandleMutLeaf<'a, C, S>
+impl<'a, C, S, const N: usize> DerefMut for HandleMutLeaf<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -293,14 +293,14 @@ where
     }
 }
 
-impl<'a, C, S> HandleMutNode<'a, C, S>
+impl<'a, C, S, const N: usize> HandleMutNode<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     /// Replaces the node with `handle`
     /// Invalidates the `HandleMutNone` if `handle` is not a node.
-    pub fn replace(&mut self, handle: Handle<C, S>) -> Repr<C, S> {
+    pub fn replace(&mut self, handle: Handle<C, S, N>) -> Repr<C, S> {
         match mem::replace(self.inner, handle.0) {
             HandleInner::Node(n, _) => n,
             _ => panic!("multiple incompatible replaces"),
@@ -313,20 +313,20 @@ where
         F: Fn(&mut C) -> Result<R, S::Error>,
     {
         match self.inner {
-            HandleInner::Node(ref mut n, _) => n.val_mut(f),
+            HandleInner::Node(ref mut n, _) => f(&mut n.restore()?),
             _ => panic!("multiple incompatible replaces"),
         }
     }
 }
 
-impl<'a, C, S> HandleMutLeaf<'a, C, S>
+impl<'a, C, S, const N: usize> HandleMutLeaf<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     /// Replaces the leaf with `handle`
     /// Invalidates the `HandleMutNone` if `handle` is not None.
-    pub fn replace(&mut self, handle: Handle<C, S>) -> C::Leaf {
+    pub fn replace(&mut self, handle: Handle<C, S, N>) -> C::Leaf {
         match mem::replace(self.inner, handle.0) {
             HandleInner::Leaf(l) => l,
             _ => panic!("multiple incompatible replaces"),
@@ -334,50 +334,50 @@ where
     }
 }
 
-impl<'a, C, S> HandleMutNone<'a, C, S>
+impl<'a, C, S, const N: usize> HandleMutNone<'a, C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     /// Replaces the empty node with `handle`
     /// Invalidates the `HandleMutNone` if `handle` is not None.
-    pub fn replace(&mut self, handle: Handle<C, S>) {
+    pub fn replace(&mut self, handle: Handle<C, S, N>) {
         *self.inner = handle.0
     }
 }
 
 /// A mutable reference to a handle
-pub enum HandleMut<'a, C, S>
+pub enum HandleMut<'a, C, S, const N: usize>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     /// Mutable handle pointing at a leaf
-    Leaf(HandleMutLeaf<'a, C, S>),
+    Leaf(HandleMutLeaf<'a, C, S, N>),
     /// Mutable handle pointing at a node
-    Node(HandleMutNode<'a, C, S>),
+    Node(HandleMutNode<'a, C, S, N>),
     /// Mutable handle pointing at an empty slot
-    None(HandleMutNone<'a, C, S>),
+    None(HandleMutNone<'a, C, S, N>),
 }
 
-impl<C, S> Handle<C, S>
+impl<C, S, const N: usize> Handle<C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     /// Constructs a new leaf Handle
-    pub fn new_leaf(l: C::Leaf) -> Handle<C, S> {
+    pub fn new_leaf(l: C::Leaf) -> Handle<C, S, N> {
         Handle(HandleInner::Leaf(l))
     }
 
     /// Constructs a new node Handle
-    pub fn new_node(node: C) -> Result<Handle<C, S>, S::Error> {
+    pub fn new_node(node: C) -> Result<Handle<C, S, N>, S::Error> {
         let ann = node.annotation().expect("Empty node handles are invalid");
         Ok(Handle(HandleInner::Node(Repr::new(node)?, ann)))
     }
 
     /// Constructs a new empty node Handle
-    pub fn new_empty() -> Handle<C, S> {
+    pub fn new_empty() -> Handle<C, S, N> {
         Handle(HandleInner::None)
     }
 
@@ -398,7 +398,7 @@ where
     /// Converts handle into leaf, panics on mismatching type
     pub fn into_node(self) -> Result<C, S::Error> {
         if let HandleInner::Node(n, _) = self.0 {
-            n.unwrap_or_clone()
+            n.restore()
         } else {
             panic!("Not a node")
         }
@@ -441,32 +441,39 @@ where
         Ok(match self.0 {
             HandleInner::None => None,
             HandleInner::Leaf(_) => None,
-            HandleInner::Node(ref mut n, ..) => Some(n.get_id()?),
+            HandleInner::Node(ref mut n, ..) => Some(match n {
+                #[cfg(feature = "canonical/host")]
+                Repr::Inline { bytes, .. } => *bytes,
+                #[cfg(feature = "canonical/host")]
+                Repr::Ident(id) => *id,
+                #[cfg(not(feature = "canonical/host"))]
+                Repr::Value { .. } => n.get_id(),
+                #[cfg(not(feature = "canonical/host"))]
+                Repr::Ident { ident, .. } => *ident,
+            }),
         })
     }
 
     /// Return the annotation for the handle, unless None
-    pub fn annotation(&self) -> Option<Cow<C::Annotation>> {
+    pub fn annotation(&self) -> Option<C::Annotation> {
         match self.0 {
             HandleInner::None => None,
-            HandleInner::Leaf(ref l) => {
-                Some(Cow::Owned(C::Annotation::from(l)))
-            }
-            HandleInner::Node(_, ref ann) => Some(Cow::Borrowed(ann)),
+            HandleInner::Leaf(ref l) => Some(C::Annotation::from(l)),
+            HandleInner::Node(_, ref ann) => Some(ann.clone()),
         }
     }
 
     /// Returns a HandleRef from the Handle
-    pub fn inner(&self) -> Result<HandleRef<C, S>, S::Error> {
+    pub fn inner(&self) -> Result<HandleRef<C, S, N>, S::Error> {
         Ok(match self.0 {
             HandleInner::None => HandleRef::None,
             HandleInner::Leaf(ref l) => HandleRef::Leaf(l),
-            HandleInner::Node(ref n, _) => HandleRef::Node(n.val()?),
+            HandleInner::Node(ref n, _) => HandleRef::Node(n.restore()?),
         })
     }
 
     /// Returns a mutable reference to the `Handle` as `HandleMut`
-    pub fn inner_mut(&mut self) -> Result<HandleMut<C, S>, S::Error> {
+    pub fn inner_mut(&mut self) -> Result<HandleMut<C, S, N>, S::Error> {
         match self.0 {
             HandleInner::None => {
                 Ok(HandleMut::None(HandleMutNone { inner: &mut self.0 }))
@@ -481,24 +488,25 @@ where
     }
 }
 
-impl<C, S> ErasedAnnotation<C::Annotation> for Handle<C, S>
+impl<C, S, const N: usize> ErasedAnnotation<C::Annotation> for Handle<C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
-    fn annotation(&self) -> Option<Cow<C::Annotation>> {
+    fn annotation(&self) -> Option<C::Annotation> {
         self.annotation()
     }
 }
 
-impl<C, S> Handle<C, S>
+/*
+impl<C, S, const N: usize> Handle<C, S, N>
 where
-    C: Compound<S> + DebugDraw<S>,
-    C::Leaf: std::fmt::Debug,
+    C: Compound<S, N> + DebugDraw<S, N>,
+    C::Leaf: core::fmt::Debug,
     S: Store,
 {
     /// Draw contents of handle, for debug use
-    pub fn draw_conf(&self, state: &mut DrawState) -> String {
+    pub fn draw_conf(&self, state: &mut DrawState) -> ArrayString<_, N> {
         match self.0 {
             HandleInner::None => "□ ".to_string(),
             HandleInner::Leaf(ref l) => format!("{:?} ", l),
@@ -513,3 +521,4 @@ where
         }
     }
 }
+*/

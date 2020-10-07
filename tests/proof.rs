@@ -10,7 +10,7 @@ use canonical_host::MemStore;
 fn merkle_proof() {
     use kelvin::Proof;
 
-    let mut hamt = NarrowHAMT::<_, _, Void, MemStore>::new();
+    let mut hamt = NarrowHAMT::<_, _, Void, MemStore, 1024>::new();
 
     let n = 16;
 

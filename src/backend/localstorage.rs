@@ -2,7 +2,7 @@
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
 use std::io::{self, Read, Write};
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 use std::path::PathBuf;
 
 use base64::{decode, encode_config, encode_config_buf, STANDARD_NO_PAD};

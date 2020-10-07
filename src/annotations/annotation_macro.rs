@@ -14,7 +14,7 @@ macro_rules! annotation {
 
     } => {
 
-        use std::borrow::Borrow as __Borrow;
+        use core::borrow::Borrow as __Borrow;
         use $crate::annotations::ErasedAnnotation as __ErasedAnnotation;
         use $crate::annotations::Combine as __Combine;
         use $crate::{

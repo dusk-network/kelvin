@@ -1,7 +1,7 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 use canonical::Store;
 
@@ -10,36 +10,38 @@ use crate::compound::Compound;
 use crate::handle::Handle;
 use crate::raw_branch::Level;
 
-struct ProofLevel<C: Compound<S>, S: Store> {
+use const_arrayvec::ArrayVec;
+
+struct ProofLevel<C: Compound<S, N>, S: Store, const N: usize> {
     ofs: usize,
     node: C,
     _marker: PhantomData<S>,
 }
 
-impl<C, S> ProofLevel<C, S>
+impl<C, S, const N: usize> ProofLevel<C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
     fn root_hash(&mut self) -> S::Ident {
         self.node.root_hash()
     }
 
-    fn children(&self) -> &[Handle<C, S>] {
+    fn children(&self) -> &[Handle<C, S, N>] {
         self.node.children()
     }
 
-    fn children_mut(&mut self) -> &mut [Handle<C, S>] {
+    fn children_mut(&mut self) -> &mut [Handle<C, S, N>] {
         self.node.children_mut()
     }
 }
 
-impl<C, S> From<&mut Level<'_, C, S>> for ProofLevel<C, S>
+impl<C, S, const N: usize> From<&mut Level<'_, C, S, N>> for ProofLevel<C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
 {
-    fn from(level: &mut Level<C, S>) -> Self {
+    fn from(level: &mut Level<C, S, N>) -> Self {
         // Make sure we compute and cache the hashes along the path
         let _ = level.root_hash();
         ProofLevel {
@@ -51,17 +53,19 @@ where
 }
 
 /// A merkle proof that a certain leaf exists in a compound collection
-pub struct Proof<C: Compound<S>, S: Store>(Vec<ProofLevel<C, S>>);
+pub struct Proof<C: Compound<S, N>, S: Store, const N: usize>(
+    ArrayVec<ProofLevel<C, S, N>, N>,
+);
 
-impl<C, S> Proof<C, S>
+impl<C, S, const N: usize> Proof<C, S, N>
 where
-    C: Compound<S>,
+    C: Compound<S, N>,
     S: Store,
-    S::Ident: std::fmt::Debug,
+    S::Ident: core::fmt::Debug,
 {
     /// Creates a new proof from a branch
-    pub fn new(from: &mut BranchMut<C, S>) -> Self {
-        let mut branch = vec![];
+    pub fn new(from: &mut BranchMut<C, S, N>) -> Self {
+        let mut branch: ArrayVec<ProofLevel<C, S, N>, N> = ArrayVec::new();
 
         for level in from.levels_mut() {
             branch.push(ProofLevel::from(level))

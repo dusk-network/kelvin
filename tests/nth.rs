@@ -9,7 +9,7 @@ use canonical_host::MemStore;
 
 #[test]
 fn nth_vs_iter() {
-    let mut hamt = HAMT::<_, _, Cardinality<u64>, MemStore>::new();
+    let mut hamt = HAMT::<_, _, Cardinality<u64>, MemStore, 4>::new();
 
     let n: u64 = 1024;
 
