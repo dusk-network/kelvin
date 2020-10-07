@@ -401,7 +401,8 @@ where
             if !self.levels.is_empty() {
                 if let NodeRef::Owned(o) = popped.node {
                     let last = self.levels.last_mut().expect("length < 1");
-                    last.insert_child(*o);
+                    // FIXME: Should we handle this error? Or simply omit it?
+                    let _ = last.insert_child(*o);
                 }
             }
             true
