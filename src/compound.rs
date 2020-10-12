@@ -50,14 +50,4 @@ where
     ) -> Result<Option<BranchMut<Self, S>>, S::Error> {
         BranchMut::new(self, m)
     }
-
-    /// Returns the hash of the type.
-    /// This does not write anything to disk, the hashes are simply recursively
-    /// computed and cached
-    fn root_hash(&mut self) -> S::Ident {
-        // let mut sink = Sink::new_dry();
-        // self.persist(&mut sink).expect("Dry run");
-        // sink.fin().expect("Dry run")
-        unimplemented!()
-    }
 }

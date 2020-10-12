@@ -412,7 +412,7 @@ mod test {
 
     use kelvin::{
         annotations::Cardinality, quickcheck_map, tests::CorrectEmptyState,
-        Blake2b, DebugDraw, DrawState,
+        Blake2b,
     };
 
     #[test]
@@ -525,36 +525,6 @@ mod test {
         assert_eq!(h.remove(&vec![0x00, 0x10]).unwrap(), Some(0));
 
         h.assert_correct_empty_state();
-    }
-
-    impl<K, V, A, S> DebugDraw<S> for Radix<K, V, A, S>
-    where
-        K: 'static,
-        V: fmt::Debug + Content<S>,
-        A: Annotation<V, S>,
-        S: Store,
-    {
-        fn draw_conf(&self, state: &mut DrawState) -> String {
-            let mut s = String::new();
-
-            s.push_str(&format!("({:?}, ", self.handles[0]));
-
-            for i in 1..N_BUCKETS {
-                match self.handles[i].handle_type() {
-                    HandleType::Leaf | HandleType::Node => {
-                        s.push_str(&format!(
-                            "[{:x} {:?}] => ",
-                            i - 1,
-                            self.prefixes[i - 1]
-                        ));
-                        s.push_str(&self.handles[i].draw_conf(state));
-                    }
-                    _ => (),
-                }
-            }
-            s.push_str(")");
-            s
-        }
     }
 
     quickcheck_map!(|| Radix::<_, _, Cardinality<u64>, _>::new());

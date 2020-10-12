@@ -10,4 +10,9 @@ description = "2-3 Tree Data structure"
 
 [dependencies]
 kelvin = { path = "../..", version = "0.19"  }
+canonical = { path = "../../../canonical/canon" }
+canonical_derive = { path = "../../../canonical/canon_derive" }
 arrayvec = "0.5"
+
+[dev-dependencies]
+canonical_host = { path = "../../../canonical/canon_host" }

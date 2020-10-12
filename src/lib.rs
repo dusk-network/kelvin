@@ -13,7 +13,6 @@ pub mod annotations;
 mod backend;
 mod branch;
 mod compound;
-mod debug_draw;
 mod handle;
 mod iter;
 mod map;
@@ -26,7 +25,6 @@ pub use crate::annotations::{
 };
 pub use crate::branch::{Branch, BranchMut};
 pub use crate::compound::Compound;
-pub use crate::debug_draw::{DebugDraw, DrawState};
 pub use crate::handle::{
     Handle, HandleMut, HandleMutLeaf, HandleMutNode, HandleMutNone, HandleRef,
     HandleType,
@@ -36,6 +34,3 @@ pub use crate::map::{ValIterable, ValPath, ValPathMut, ValRef, ValRefMut, KV};
 pub use crate::proof::Proof;
 pub use crate::raw_branch::Level;
 pub use crate::search::{Method, SearchResult};
-
-// Re-export
-pub use bytehash::{Blake2b, ByteHash, State as ByteHashState};

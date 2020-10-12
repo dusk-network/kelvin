@@ -12,13 +12,16 @@ macro_rules! quickcheck_map {
 
         #[allow(unused)]
         use std::collections::HashMap;
+
+        use canonical::Store;
+        use canonical_host::MemStore;
+
         use $crate::tests::CorrectEmptyState as _;
 
         use $crate::tests::quickcheck::{quickcheck, Arbitrary, Gen};
-        #[allow(unused)]
-        use $crate::{annotations::Count, LeafIterable, Store, ValIterable};
-
         use $crate::tests::rand::Rng;
+        #[allow(unused)]
+        use $crate::{annotations::Count, LeafIterable, ValIterable};
 
         const KEY_SPACE: u8 = 20;
 
@@ -61,7 +64,7 @@ macro_rules! quickcheck_map {
         }
 
         fn run_ops(ops: Vec<Op>) -> bool {
-            let store = Store::<Blake2b>::ephemeral();
+            let store = MemStore::new();
 
             let mut test = $new_map();
             let mut model = HashMap::new();
@@ -120,6 +123,9 @@ macro_rules! quickcheck_map {
                         a.sort();
                         c.sort();
 
+                        println!("a {:?}", a);
+                        println!("c {:?}", c);
+
                         assert!(a == c);
                     }
                     Op::ValuesMut => {
@@ -149,19 +155,20 @@ macro_rules! quickcheck_map {
                         assert!(a == c);
                     }
                     Op::Persist => {
-                        store.persist(&mut test).unwrap();
+                        store.put(&test).unwrap();
                     }
                     Op::Hash => {
-                        let _ = test.root_hash();
+                        let _ = MemStore::ident(&test);
                     }
                     Op::HashPersist => {
-                        let root_hash = test.root_hash();
-                        let snapshot = store.persist(&mut test).unwrap();
-                        assert_eq!(&root_hash, snapshot.hash(),)
+                        let root_hash = MemStore::ident(&test);
+                        let ident = store.put(&test).unwrap();
+                        assert_eq!(root_hash, ident)
                     }
                     Op::PersistRestore => {
-                        let snapshot = store.persist(&mut test).unwrap();
-                        test = store.restore(&snapshot).unwrap();
+                        println!("{:?}", test);
+                        let ident = store.put(&test).unwrap();
+                        test = store.get(&ident).unwrap();
                     }
                     Op::Count => assert_eq!(test.count() as usize, model.len()),
                 };
@@ -257,6 +264,28 @@ macro_rules! quickcheck_map {
         #[test]
         fn regression_insert_two_get() {
             assert!(run_ops(vec![Insert(5, 23), Insert(9, 52), Get(4)]))
+        }
+
+        #[test]
+        fn regression_persist_restore() {
+            assert!(run_ops(vec![
+                Insert(14, 10),
+                Insert(4, 20),
+                Values,
+                PersistRestore,
+                Values
+            ]))
+        }
+
+        #[test]
+        fn regression_wtf() {
+            assert!(run_ops(vec![
+                Insert(17, 80),
+                Insert(11, 39),
+                PersistRestore,
+                Insert(12, 101),
+                Values
+            ]))
         }
     };
 }

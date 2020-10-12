@@ -17,9 +17,8 @@ macro_rules! annotation {
         use std::borrow::Borrow as __Borrow;
         use $crate::annotations::ErasedAnnotation as __ErasedAnnotation;
         use $crate::annotations::Combine as __Combine;
-        use canonical::Canon as Canon;
-        use canonical_derive::Canon as Canon;
-
+        use canonical::Canon as __Canon;
+        // use canonical_derive::Canon as __Canon;
 
         $(#[$outer])*
         #[derive(Canon)]

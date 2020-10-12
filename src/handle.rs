@@ -11,7 +11,6 @@ use canonical_derive::Canon;
 
 use crate::annotations::ErasedAnnotation;
 use crate::compound::Compound;
-use crate::debug_draw::{DebugDraw, DrawState};
 
 #[derive(Canon, Clone)]
 enum HandleInner<C, S>
@@ -44,7 +43,7 @@ where
 
 impl<C, S> fmt::Debug for Handle<C, S>
 where
-    C: Compound<S>,
+    C: Compound<S> + fmt::Debug,
     S: Store,
     C::Leaf: fmt::Debug,
 {
@@ -52,7 +51,7 @@ where
         match self.0 {
             HandleInner::None => write!(f, "None"),
             HandleInner::Leaf(ref l) => write!(f, "Leaf({:?})", l),
-            _ => write!(f, "Node"),
+            HandleInner::Node(ref n, _) => write!(f, "Node({:?})", n.val()),
         }
     }
 }
@@ -98,128 +97,6 @@ where
     }
 }
 
-// impl<C, S> Clone for HandleInner<C, S>
-// where
-//     C: Compound<S>,
-//     S: Store,
-// {
-//     fn clone(&self) -> Self {
-//         match self {
-//             HandleInner::Leaf(ref l) => HandleInner::Leaf(l.clone()),
-//             HandleInner::Node(ref n, ref ann, ref cached) => {
-//                 HandleInner::Node(n.clone(), ann.clone(), *cached)
-//             }
-//             HandleInner::Persisted(ref snap, ref ann) => {
-//                 HandleInner::Persisted(snap.clone(), ann.clone())
-//             }
-//             HandleInner::None => HandleInner::None,
-//         }
-//     }
-// }
-
-// impl<C, S> Canon<S> for Handle<C, S>
-// where
-//     C: Compound<S>,
-//     S: Store,
-// {
-//     fn write(&self, sink: &mut impl Sink<S>) -> Result<(), S::Error> {
-//         // match self.0 {
-//         //     HandleInner::None => sink.write_all(&[0]),
-//         //     HandleInner::Leaf(ref mut leaf) => {
-//         //         sink.write_all(&[1])?;
-//         //         leaf.persist(sink)
-//         //     }
-//         //     HandleInner::Persisted(ref hash, ref mut ann) => {
-//         //         sink.write_all(&[2])?;
-//         //         sink.write_all((**hash).as_ref())?;
-//         //         ann.persist(sink)
-//         //     }
-//         //     HandleInner::Node(ref mut node, ref mut ann, ref mut cached) => {
-//         //         match sink.store() {
-//         //             Some(store) => {
-//         //                 // We need to write the data to the backing store
-
-//         //                 // Create new sink sharing the store, either with the cached
-//         //                 // hash or post-hashing
-//         //                 let mut sub_sink = match *cached {
-//         //                     Some(hash) => {
-//         //                         debug_assert!({
-//         //                             let mut sub_sink = Sink::new_dry();
-//         //                             Rc::make_mut(node)
-//         //                                 .persist(&mut sub_sink)?;
-//         //                             sub_sink.fin()? == hash
-//         //                         });
-//         //                         Sink::new_cached(hash, store)
-//         //                     }
-//         //                     None => Sink::new(store),
-//         //                 };
-
-//         //                 // Persist the node to the sub-sink
-//         //                 Rc::make_mut(node).persist(&mut sub_sink)?;
-//         //                 let hash = sub_sink.fin()?;
-
-//         //                 // update the handle to a persisted reference
-//         //                 let snap = Snapshot::new(hash, store);
-//         //                 self.0 = HandleInner::Persisted(snap, ann.clone());
-//         //                 // recurse to drop the borrow of ann
-//         //                 // and hit the Persisted match arm
-//         //                 self.persist(sink)
-//         //             }
-//         //             None => {
-//         //                 // No store, we're doing a dry run
-//         //                 let hash = match *cached {
-//         //                     Some(hash) => {
-//         //                         debug_assert!({
-//         //                             let mut sub_sink = Sink::new_dry();
-//         //                             Rc::make_mut(node)
-//         //                                 .persist(&mut sub_sink)?;
-//         //                             sub_sink.fin()? == hash
-//         //                         });
-//         //                         hash
-//         //                     }
-//         //                     None => {
-//         //                         let mut sub_sink = Sink::new_dry();
-//         //                         Rc::make_mut(node).persist(&mut sub_sink)?;
-//         //                         let hash = sub_sink.fin()?;
-//         //                         // Update our hash cache
-//         //                         *cached = Some(hash);
-//         //                         hash
-//         //                     }
-//         //                 };
-//         //                 // In a dry run, we write the hash as if it was persisted
-//         //                 sink.write_all(&[2])?;
-//         //                 sink.write_all(hash.as_ref())?;
-//         //                 ann.persist(sink)
-//         //             }
-//         //         }
-//         //     }
-//         // }
-//         unimplemented!()
-//     }
-
-//     fn read(source: &mut impl Source<S>) -> Result<S::Error, Self> {
-//         // let mut tag = [0u8];
-//         // source.read_exact(&mut tag)?;
-//         // match tag {
-//         //     [0] => Ok(Handle(HandleInner::None)),
-//         //     [1] => Ok(Handle(HandleInner::Leaf(C::Leaf::restore(source)?))),
-//         //     [2] => {
-//         //         let mut h = S::Ident::default();
-//         //         source.read_exact(h.as_mut())?;
-//         //         Ok(Handle(HandleInner::Persisted(
-//         //             Snapshot::new(h, source.store()),
-//         //             C::Annotation::restore(source)?,
-//         //         )))
-//         //     }
-//         //     _ => Err(io::Error::new(
-//         //         io::ErrorKind::InvalidData,
-//         //         "Invalid Handle encoding",
-//         //     )),
-//         // }
-//         unimplemented!()
-//     }
-// }
-
 /// A mutable reference to an empty `Handle`
 pub struct HandleMutNone<'a, C, S>
 where
@@ -246,24 +123,6 @@ where
 {
     inner: &'a mut HandleInner<C, S>,
 }
-
-// impl<'a, C, S> Deref for HandleMutNode<'a, C, S>
-// where
-//     C: Compound<S>,
-//     S: Store,
-// {
-//     type Target = C;
-
-//     // We can assure that HandleMutNode is always "expanded"
-//     fn deref(&self) -> &Self::Target {
-//         match self.inner {
-//             HandleInner::Node(n, _) => {
-//                 &*n.val().expect("invalid deref after replace")
-//             }
-//             _ => panic!("invalid deref after replace"),
-//         }
-//     }
-// }
 
 impl<'a, C, S> Deref for HandleMutLeaf<'a, C, S>
 where
@@ -488,28 +347,5 @@ where
 {
     fn annotation(&self) -> Option<Cow<C::Annotation>> {
         self.annotation()
-    }
-}
-
-impl<C, S> Handle<C, S>
-where
-    C: Compound<S> + DebugDraw<S>,
-    C::Leaf: std::fmt::Debug,
-    S: Store,
-{
-    /// Draw contents of handle, for debug use
-    pub fn draw_conf(&self, state: &mut DrawState) -> String {
-        match self.0 {
-            HandleInner::None => "□ ".to_string(),
-            HandleInner::Leaf(ref l) => format!("{:?} ", l),
-            HandleInner::Node(ref n, _) => {
-                state.recursion += 1;
-                format!("\n{}{}", state.pad(), {
-                    let res = n.val().unwrap().draw_conf(state);
-                    state.recursion -= 1;
-                    res
-                })
-            }
-        }
     }
 }

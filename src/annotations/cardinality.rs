@@ -26,7 +26,7 @@ impl<T> Counter for T where
 }
 
 /// Annotation that keeps track of total number of leaves
-#[derive(PartialEq, Eq, Clone, Canon)]
+#[derive(PartialEq, Eq, Clone, Canon, Debug)]
 pub struct Cardinality<T>(T);
 
 impl<T> Associative for Cardinality<T>

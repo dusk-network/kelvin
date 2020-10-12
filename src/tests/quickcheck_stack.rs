@@ -7,6 +7,8 @@
 #[macro_export]
 macro_rules! quickcheck_stack {
     ($new_stack:expr) => {
+        use canonical_host::MemStore as __MemStore;
+
         use $crate::tests::tempfile::tempdir;
 
         #[allow(unused)]
@@ -14,7 +16,7 @@ macro_rules! quickcheck_stack {
 
         use $crate::tests::quickcheck::{quickcheck, Arbitrary, Gen};
         #[allow(unused)]
-        use $crate::{annotations::Count, LeafIterable, Store, ValIterable};
+        use $crate::{annotations::Count, LeafIterable, ValIterable};
 
         use $crate::tests::rand::Rng;
 
@@ -59,7 +61,7 @@ macro_rules! quickcheck_stack {
         }
 
         fn run_ops(ops: Vec<Op>) -> bool {
-            let store = Store::<Blake2b>::ephemeral();
+            let store = __MemStore::new();
 
             let mut test = $new_stack();
             let mut model = Vec::new();
@@ -140,19 +142,19 @@ macro_rules! quickcheck_stack {
                         assert!(a == c);
                     }
                     Op::Persist => {
-                        store.persist(&mut test).unwrap();
+                        store.put(&test).unwrap();
                     }
                     Op::Hash => {
                         let _ = test.root_hash();
                     }
                     Op::HashPersist => {
-                        let root_hash = test.root_hash();
-                        let snapshot = store.persist(&mut test).unwrap();
-                        assert_eq!(&root_hash, snapshot.hash(),)
+                        let root_hash = S::ident(&test);
+                        let snapshot = store.put(&test).unwrap();
+                        assert_eq!(&root_hash, snapshot.hash())
                     }
                     Op::PersistRestore => {
-                        let snapshot = store.persist(&mut test).unwrap();
-                        test = store.restore(&snapshot).unwrap();
+                        let snapshot = store.put(&test).unwrap();
+                        test = store.get(&snapshot).unwrap();
                     }
                     Op::Count => assert_eq!(test.count() as usize, model.len()),
                 };

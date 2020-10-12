@@ -10,11 +10,14 @@ use std::mem;
 
 use arrayvec::ArrayVec;
 
+use canonical::{Canon, Store};
+use canonical_derive::Canon;
+
 use kelvin::{
     annotation,
     annotations::{Annotation, Cardinality, Counter, MaxKey, MaxKeyType},
-    ByteHash, Compound, Content, Handle, HandleMut, HandleType, Method,
-    SearchResult, Sink, Source, ValPath, ValPathMut, KV,
+    Compound, Handle, HandleMut, HandleType, Method, SearchResult, ValPath,
+    ValPathMut, KV,
 };
 
 /// The default 2-3 tree
@@ -24,15 +27,15 @@ const N: usize = 2;
 const M: usize = 3;
 
 /// A 2-3 tree
-#[derive(Clone)]
+#[derive(Clone, Canon)]
 pub struct Two3Tree<K, V, A, S: Store>(ArrayVec<[Handle<Self, S>; M]>)
 where
     Self: Compound<S>;
 
 impl<K, V, A, S> Default for Two3Tree<K, V, A, S>
 where
-    K: Content<S> + Ord,
-    V: Content<S>,
+    K: Canon<S> + Ord,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store,
 {
@@ -72,8 +75,8 @@ impl<'a, K, O: ?Sized> From<&'a O> for Two3TreeSearch<'a, K, O> {
 impl<'a, K, V, A, O, S> Method<Two3Tree<K, V, A, S>, S>
     for Two3TreeSearch<'a, K, O>
 where
-    K: Ord + Borrow<O> + Content<S>,
-    V: Content<S>,
+    K: Ord + Borrow<O> + Canon<S>,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S> + Borrow<MaxKey<K>>,
     O: Ord + ?Sized,
     S: Store,
@@ -130,8 +133,8 @@ where
 
 impl<K, V, A, S> Two3Tree<K, V, A, S>
 where
-    K: Content<S> + Ord,
-    V: Content<S>,
+    K: Canon<S> + Ord,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S> + Borrow<MaxKey<K>>,
     S: Store,
 {
@@ -165,7 +168,7 @@ where
     pub fn get_mut<O>(
         &mut self,
         k: &O,
-    ) -> io::Result<Option<ValPathMut<K, V, Self, S>>>
+    ) -> Result<Option<ValPathMut<K, V, Self, S>>, S::Error>
     where
         O: ?Sized + Ord + Eq + Borrow<K>,
         K: Borrow<O>,
@@ -177,7 +180,7 @@ where
         &mut self,
         mut handle: Handle<Self, S>,
         depth: usize,
-    ) -> io::Result<InsertResult<Self, S>> {
+    ) -> Result<InsertResult<Self, S>, S::Error> {
         /// Use an enum to get around borrow issues
         #[derive(Debug)]
         enum Action {
@@ -308,7 +311,7 @@ where
     }
 
     /// Remove element with given key, returning it.
-    pub fn remove<O>(&mut self, o: &O) -> io::Result<Option<V>>
+    pub fn remove<O>(&mut self, o: &O) -> Result<Option<V>, S::Error>
     where
         O: ?Sized + Ord + Eq,
         K: Borrow<O>,
@@ -324,7 +327,7 @@ where
         &mut self,
         k: &O,
         depth: usize,
-    ) -> io::Result<RemoveResult<Self, S>>
+    ) -> Result<RemoveResult<Self, S>, S::Error>
     where
         O: ?Sized + Ord + Eq,
         K: Borrow<O>,
@@ -469,36 +472,11 @@ where
     }
 }
 
-impl<K, V, A, S> Content<S> for Two3Tree<K, V, A, S>
-where
-    K: Content<S> + Ord,
-    V: Content<S>,
-    A: Annotation<KV<K, V>, S>,
-    S: Store,
-{
-    fn persist(&mut self, sink: &mut Sink<S>) -> io::Result<()> {
-        (self.0.len() as u8).persist(sink)?;
-        for h in &mut self.0 {
-            h.persist(sink)?
-        }
-        Ok(())
-    }
-
-    fn restore(source: &mut Source<S>) -> io::Result<Self> {
-        let mut b = Two3Tree::default();
-        let len = u8::restore(source)?;
-        for _ in 0..len {
-            b.0.push(Handle::restore(source)?);
-        }
-        Ok(b)
-    }
-}
-
 impl<K, V, A, S> Compound<S> for Two3Tree<K, V, A, S>
 where
     S: Store,
-    K: Content<S> + Ord,
-    V: Content<S>,
+    K: Canon<S> + Ord,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
 {
     type Leaf = KV<K, V>;
@@ -519,7 +497,6 @@ mod test {
     use super::*;
 
     use kelvin::quickcheck_map;
-    use kelvin::Blake2b;
 
     #[test]
     fn trivial_map() {

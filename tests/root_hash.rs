@@ -1,7 +1,7 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use kelvin::{Compound, Void};
+use kelvin::Void;
 use kelvin_hamt::HAMT;
 
 use canonical::Store;
@@ -19,7 +19,7 @@ fn root_hash() {
 
     // Calculating the root hash should not write anything to any store
 
-    let root_hash: <MemStore as Store>::Ident = hamt.root_hash();
+    let root_hash = MemStore::ident(&hamt);
 
     let store = MemStore::new();
 
@@ -27,9 +27,9 @@ fn root_hash() {
 
     assert_eq!(root_hash, id);
 
-    let mut hamt_restored = store.get::<Hamt>(&id).unwrap();
+    let hamt_restored = store.get::<Hamt>(&id).unwrap();
 
-    let restored_root_hash = hamt_restored.root_hash();
+    let restored_root_hash = MemStore::ident(&hamt_restored);
 
     assert_eq!(root_hash, restored_root_hash);
 }

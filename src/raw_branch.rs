@@ -401,7 +401,7 @@ where
             if !self.levels.is_empty() {
                 if let NodeRef::Owned(o) = popped.node {
                     let last = self.levels.last_mut().expect("length < 1");
-                    last.insert_child(*o);
+                    last.insert_child(*o).expect("FIXME: pop failed");
                 }
             }
             true

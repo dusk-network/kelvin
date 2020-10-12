@@ -22,7 +22,7 @@ where
     S: Store,
 {
     fn root_hash(&mut self) -> S::Ident {
-        self.node.root_hash()
+        S::ident(&self.node)
     }
 
     fn children(&self) -> &[Handle<C, S>] {
@@ -41,7 +41,7 @@ where
 {
     fn from(level: &mut Level<C, S>) -> Self {
         // Make sure we compute and cache the hashes along the path
-        let _ = level.root_hash();
+        // let _ = S::ident(&*level);
         ProofLevel {
             ofs: level.offset(),
             node: (*level).clone(),
@@ -104,7 +104,7 @@ where
         }
         if let Some(root) = previous {
             // Verify against the structure we want to prove with
-            if root == against.root_hash() {
+            if root == S::ident(against) {
                 Ok(self.get_leaf())
             } else {
                 Ok(None)

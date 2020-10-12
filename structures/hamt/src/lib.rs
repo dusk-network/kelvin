@@ -24,7 +24,7 @@ fn hash<T: Hash, S: Store>(t: &T) -> S::Ident {
     let mut hasher = DefaultHasher::new();
     t.hash(&mut hasher);
     let bytes = hasher.finish().to_be_bytes();
-    S::Ident::from(&bytes)
+    S::ident(&bytes)
 }
 
 /// Default HAMT-map without annotations
@@ -33,18 +33,18 @@ pub type DefaultHAMTMap<K, V, S> = HAMT<K, V, Void, S>;
 pub type CountingHAMTMap<K, V, S> = HAMT<K, V, Cardinality<u64>, S>;
 
 /// A hash array mapped trie with branching factor of 16
-#[derive(Clone, Canon)]
+#[derive(Canon, Clone, Debug)]
 pub struct HAMT<K, V, A, S>([Handle<Self, S>; 16])
 where
-    K: Canon<S> + Clone,
-    V: Canon<S> + Clone,
+    K: Canon<S>,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store;
 
 impl<K, V, A, S> Default for HAMT<K, V, A, S>
 where
-    K: Canon<S> + Clone,
-    V: Canon<S> + Clone,
+    K: Canon<S>,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store,
 {
@@ -54,18 +54,18 @@ where
 }
 
 /// A hash array mapped trie with branching factor of 4
-#[derive(Clone, Canon)]
+#[derive(Canon, Clone, Debug)]
 pub struct NarrowHAMT<K, V, A, S>([Handle<Self, S>; 4])
 where
-    K: Canon<S> + Clone,
-    V: Canon<S> + Clone,
+    K: Canon<S>,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store;
 
 impl<K, V, A, S> Default for NarrowHAMT<K, V, A, S>
 where
-    K: Canon<S> + Clone,
-    V: Canon<S> + Clone,
+    K: Canon<S>,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store,
 {
@@ -257,8 +257,8 @@ impl<'a, K, V, A, O, S> Method<HAMT<K, V, A, S>, S>
     for HAMTSearch<'a, K, V, O, S>
 where
     HAMT<K, V, A, S>: SlotSelect,
-    K: Borrow<O> + Canon<S> + Eq + Hash + Clone,
-    V: Canon<S> + Clone,
+    K: Borrow<O> + Canon<S> + Eq + Hash,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     O: ?Sized + Eq,
     S: Store,
@@ -283,8 +283,8 @@ impl<'a, K, V, A, O, S> Method<NarrowHAMT<K, V, A, S>, S>
     for HAMTSearch<'a, K, V, O, S>
 where
     NarrowHAMT<K, V, A, S>: SlotSelect,
-    K: Borrow<O> + Canon<S> + Eq + Hash + Clone,
-    V: Canon<S> + Clone,
+    K: Borrow<O> + Canon<S> + Eq + Hash,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     O: ?Sized + Eq,
     S: Store,
@@ -313,8 +313,8 @@ enum Removed<L> {
 
 impl<K, V, A, S> HAMTTrait<K, V, S> for HAMT<K, V, A, S>
 where
-    K: Canon<S> + Eq + Hash + Clone,
-    V: Canon<S> + Clone,
+    K: Canon<S> + Eq + Hash,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store,
 {
@@ -322,8 +322,8 @@ where
 
 impl<K, V, A, S> HAMTTrait<K, V, S> for NarrowHAMT<K, V, A, S>
 where
-    K: Canon<S> + Eq + Hash + Clone,
-    V: Canon<S> + Clone,
+    K: Canon<S> + Eq + Hash,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store,
 {
@@ -331,8 +331,8 @@ where
 
 impl<K, V, A, S> SlotSelect for HAMT<K, V, A, S>
 where
-    K: Canon<S> + Clone,
-    V: Canon<S> + Clone,
+    K: Canon<S>,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store,
 {
@@ -348,8 +348,8 @@ where
 
 impl<K, V, A, S> SlotSelect for NarrowHAMT<K, V, A, S>
 where
-    K: Canon<S> + Clone,
-    V: Canon<S> + Clone,
+    K: Canon<S>,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store,
 {
@@ -368,8 +368,8 @@ where
 
 impl<K, V, A, S> HAMT<K, V, A, S>
 where
-    K: Canon<S> + Clone + Eq + Hash,
-    V: Canon<S> + Clone,
+    K: Canon<S> + Eq + Hash,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store,
 {
@@ -423,8 +423,8 @@ where
 
 impl<K, V, A, S> NarrowHAMT<K, V, A, S>
 where
-    K: Canon<S> + Clone + Eq + Hash,
-    V: Canon<S> + Clone,
+    K: Canon<S> + Eq + Hash,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store,
 {
@@ -478,8 +478,8 @@ where
 
 impl<K, V, A, S> Compound<S> for HAMT<K, V, A, S>
 where
-    K: Canon<S> + Clone,
-    V: Canon<S> + Clone,
+    K: Canon<S>,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store,
 {
@@ -497,8 +497,8 @@ where
 
 impl<K, V, A, S> Compound<S> for NarrowHAMT<K, V, A, S>
 where
-    K: Canon<S> + Clone,
-    V: Canon<S> + Clone,
+    K: Canon<S>,
+    V: Canon<S>,
     A: Annotation<KV<K, V>, S>,
     S: Store,
 {
@@ -518,18 +518,19 @@ where
 mod test {
     use super::*;
 
-    use kelvin::{quickcheck_map, Blake2b, Erased, Store};
+    use canonical_host::MemStore;
+    use kelvin::quickcheck_map;
 
     #[test]
     fn trivial_map() {
-        let mut h = HAMT::<_, _, Void, Blake2b>::new();
+        let mut h = HAMT::<_, _, Void, MemStore>::new();
         h.insert(28, 28).unwrap();
         assert_eq!(*h.get(&28).unwrap().unwrap(), 28);
     }
 
     #[test]
     fn bigger_map() {
-        let mut h = HAMT::<_, _, Void, Blake2b>::new();
+        let mut h = HAMT::<_, _, Void, MemStore>::new();
         for i in 0..1024 {
             assert!(h.get(&i).unwrap().is_none());
             h.insert(i, i).unwrap();
@@ -539,47 +540,17 @@ mod test {
 
     #[test]
     fn borrowed_keys() {
-        let mut map = HAMT::<String, u8, Void, Blake2b>::new();
+        let mut map = HAMT::<String, u8, Void, MemStore>::new();
         map.insert("hello".into(), 8).unwrap();
         assert_eq!(*map.get("hello").unwrap().unwrap(), 8);
         assert_eq!(map.remove("hello").unwrap().unwrap(), 8);
     }
 
     #[test]
-    fn erased() {
-        let store = Store::<Blake2b>::ephemeral();
-
-        let mut hamt = DefaultHAMTMap::new();
-
-        for i in 0u32..128 {
-            hamt.insert(i, i).unwrap();
-        }
-
-        let mut erased = Erased::wrap(hamt, &store).unwrap();
-        let query =
-            erased.query::<DefaultHAMTMap<u32, u32, Blake2b>>().unwrap();
-
-        assert_eq!(*query.get(&37).unwrap().unwrap(), 37);
-
-        let mut transaction = erased
-            .transaction::<DefaultHAMTMap<u32, u32, Blake2b>>()
-            .unwrap();
-
-        transaction.insert(0, 1234).unwrap();
-        transaction.commit().unwrap();
-
-        let second_query =
-            erased.query::<DefaultHAMTMap<u32, u32, Blake2b>>().unwrap();
-
-        assert_eq!(*query.get(&0).unwrap().unwrap(), 0);
-        assert_eq!(*second_query.get(&0).unwrap().unwrap(), 1234);
-    }
-
-    #[test]
     fn nested_maps() {
-        let mut map_a = HAMT::<_, _, Void, Blake2b>::new();
+        let mut map_a = HAMT::<_, _, Void, MemStore>::new();
         for i in 0..128 {
-            let mut map_b = HAMT::<_, _, Void, Blake2b>::new();
+            let mut map_b = HAMT::<_, _, Void, MemStore>::new();
 
             for o in 0..128 {
                 map_b.insert(o, o).unwrap();
