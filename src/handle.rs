@@ -384,8 +384,7 @@ mod arbitrary {
     use super::*;
     use crate::annotations::Void;
     use crate::tests::arbitrary::{self, Arbitrary};
-    use crate::tests::fuzz_content;
-
+    use canonical_fuzz::fuzz_canon;
     use canonical_host::MemStore;
 
     #[derive(Clone, Canon, Debug)]
@@ -469,6 +468,6 @@ mod arbitrary {
 
     #[test]
     fn fuzz_handle() {
-        fuzz_content::<BogoTron<MemStore>, MemStore>();
+        fuzz_canon::<BogoTron<MemStore>, MemStore>();
     }
 }

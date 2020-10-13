@@ -27,6 +27,7 @@ arbitrary = { version = "0.3", features = ["derive"] }
 canonical = { path = "../canonical/canon", features = ["host"] }
 canonical_derive = { path = "../canonical/canon_derive" }
 canonical_host = { path = "../canonical/canon_host" }
+canonical_fuzz = { path = "../canonical/canon_fuzz" }
 
 [dependencies.byteorder]
 features = ["i128"]

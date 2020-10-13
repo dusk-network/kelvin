@@ -1,13 +1,11 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-mod fuzz;
 mod quickcheck_map;
 mod quickcheck_stack;
 
 use crate::{Compound, HandleType};
 pub use arbitrary;
-pub use fuzz::{fuzz_content, fuzz_content_iterations};
 pub use quickcheck;
 pub use rand;
 pub use tempfile;
