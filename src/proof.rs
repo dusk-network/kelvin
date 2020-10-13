@@ -90,9 +90,7 @@ where
         for level in self.0.iter_mut().rev() {
             if let Some(prev) = previous {
                 let ofs = level.ofs;
-                if let Some(node_hash) =
-                    level.children_mut()[ofs].node_hash()?
-                {
+                if let Some(node_hash) = level.children_mut()[ofs].node_hash() {
                     if node_hash != prev {
                         return Ok(None);
                     }

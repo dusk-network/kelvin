@@ -18,13 +18,17 @@ fn hash<T: Hash>(t: T) -> u64 {
 
 /// Fuzzes a type with regards to its Content implementation.
 /// making sure every serialization produces an Equal result when deserialized
-pub fn fuzz_content<C: Canon<MemStore> + Arbitrary + PartialEq, S: Store>() {
+pub fn fuzz_content<C, S>()
+where
+    C: Canon<MemStore> + Arbitrary + PartialEq + std::fmt::Debug,
+    S: Store,
+{
     fuzz_content_iterations::<C, S>(FUZZ_ITERATIONS)
 }
 
 /// Fuzzes for a set number of iterations
 pub fn fuzz_content_iterations<
-    C: Canon<MemStore> + Arbitrary + PartialEq,
+    C: Canon<MemStore> + Arbitrary + PartialEq + std::fmt::Debug,
     S: Store,
 >(
     iterations: usize,

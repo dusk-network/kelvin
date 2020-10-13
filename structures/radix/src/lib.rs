@@ -4,7 +4,6 @@
 //! A Radix trie implemented on kelvin
 #![warn(missing_docs)]
 
-use std::io::{self};
 use std::mem;
 
 mod nibbles;
@@ -13,9 +12,12 @@ use nibbles::{AsNibbles, NibbleBuf, Nibbles};
 
 use kelvin::{
     annotations::{Annotation, Void},
-    ByteHash, Compound, Content, Handle, HandleMut, HandleType, Method,
-    SearchResult, Sink, Source, ValPath, ValPathMut,
+    Compound, Handle, HandleMut, HandleType, Method, SearchResult, ValPath,
+    ValPathMut,
 };
+
+use canonical::{Canon, Store};
+use canonical_derive::Canon;
 
 const N_BUCKETS: usize = 17;
 
@@ -25,6 +27,7 @@ const MAX_KEY_LEN: usize = core::u16::MAX as usize / 2;
 pub type DefaultRadixMap<K, V, S> = Radix<K, V, Void, S>;
 
 /// A Prefix tree
+#[derive(Canon)]
 pub struct Radix<K, V, A, S>
 where
     Self: Compound<S>,
@@ -36,8 +39,8 @@ where
 
 impl<K, V, A, S> Clone for Radix<K, V, A, S>
 where
-    K: 'static,
-    V: Content<S>,
+    K: 'static + Canon<S>,
+    V: Canon<S>,
     A: Annotation<V, S>,
     S: Store,
 {
@@ -51,8 +54,8 @@ where
 
 impl<K, V, A, S> Default for Radix<K, V, A, S>
 where
-    K: 'static,
-    V: Content<S>,
+    K: 'static + Canon<S>,
+    V: Canon<S>,
     A: Annotation<V, S>,
     S: Store,
 {
@@ -66,8 +69,8 @@ where
 
 impl<K, V, A, S> Method<Radix<K, V, A, S>, S> for Nibbles<'_>
 where
-    K: 'static,
-    V: Content<S>,
+    K: 'static + Canon<S>,
+    V: Canon<S>,
     A: Annotation<V, S>,
     S: Store,
 {
@@ -117,8 +120,8 @@ enum Removed<L> {
 
 impl<K, V, A, S> Radix<K, V, A, S>
 where
-    K: AsRef<[u8]> + Eq + 'static,
-    V: Content<S>,
+    K: 'static + AsRef<[u8]> + Eq + Canon<S>,
+    V: Canon<S>,
     A: Annotation<V, S>,
     S: Store,
 {
@@ -128,7 +131,10 @@ where
     }
 
     /// Get a reference to a value in the map
-    pub fn get<O>(&self, k: &O) -> io::Result<Option<ValPath<K, V, Self, S>>>
+    pub fn get<O>(
+        &self,
+        k: &O,
+    ) -> Result<Option<ValPath<K, V, Self, S>>, S::Error>
     where
         O: ?Sized + AsRef<[u8]>,
     {
@@ -139,7 +145,7 @@ where
     pub fn get_mut<O>(
         &mut self,
         k: &O,
-    ) -> io::Result<Option<ValPathMut<K, V, Self, S>>>
+    ) -> Result<Option<ValPathMut<K, V, Self, S>>, S::Error>
     where
         O: ?Sized + AsRef<[u8]>,
     {
@@ -147,13 +153,17 @@ where
     }
 
     /// Insert key-value pair into the Radix, optionally returning expelled value
-    pub fn insert(&mut self, k: K, v: V) -> io::Result<Option<V>> {
+    pub fn insert(&mut self, k: K, v: V) -> Result<Option<V>, S::Error> {
         debug_assert!(k.as_ref().len() <= MAX_KEY_LEN);
         let mut search = Nibbles::new(k.as_ref());
         self._insert(&mut search, v)
     }
 
-    fn _insert(&mut self, search: &mut Nibbles, v: V) -> io::Result<Option<V>> {
+    fn _insert(
+        &mut self,
+        search: &mut Nibbles,
+        v: V,
+    ) -> Result<Option<V>, S::Error> {
         // Leaf case, for keys that are subsets of other keys
         if search.len() == 0 {
             match self.handles[0].handle_type() {
@@ -209,7 +219,7 @@ where
             search.trim_front(common.len());
             new_node._insert(search, v)?;
 
-            self.handles[i] = Handle::new_node(new_node);
+            self.handles[i] = Handle::new_node(new_node)?;
             self.prefixes[i - 1] = common;
 
             return Ok(None);
@@ -219,7 +229,7 @@ where
                 self.handles[i].inner_mut()?
             {
                 search.trim_front(common.len());
-                node._insert(search, v)
+                node.val_mut(|n| n._insert(search, v))
             } else {
                 unreachable!()
             }
@@ -227,7 +237,7 @@ where
     }
 
     /// Remove element with given key, returning it.
-    pub fn remove<O>(&mut self, k: &O) -> io::Result<Option<V>>
+    pub fn remove<O>(&mut self, k: &O) -> Result<Option<V>, S::Error>
     where
         O: ?Sized + AsRef<[u8]>,
     {
@@ -244,7 +254,7 @@ where
         &mut self,
         search: &mut Nibbles,
         depth: usize,
-    ) -> io::Result<Removed<V>> {
+    ) -> Result<Removed<V>, S::Error> {
         let collapse = {
             if search.len() == 0 {
                 match self.handles[0].handle_type() {
@@ -295,7 +305,7 @@ where
                     self.handles[i].inner_mut()?
                 {
                     search.trim_front(common.len());
-                    match node._remove(search, depth + 1)? {
+                    match node.val_mut(|n| n._remove(search, depth + 1))? {
                         Removed::Collapse(
                             removed,
                             reinsert,
@@ -351,42 +361,10 @@ where
     }
 }
 
-impl<K, V, A, S> Content<S> for Radix<K, V, A, S>
-where
-    K: 'static,
-    V: Content<S>,
-    A: Annotation<V, S>,
-    S: Store,
-{
-    fn persist(&mut self, sink: &mut Sink<S>) -> io::Result<()> {
-        for i in 0..N_BUCKETS {
-            self.handles[i].persist(sink)?
-        }
-        // We don't need to store the prefixesdata for the leaf node
-        // since it will always be []
-        for i in 0..N_BUCKETS - 1 {
-            self.prefixes[i].persist(sink)?
-        }
-        Ok(())
-    }
-
-    fn restore(source: &mut Source<S>) -> io::Result<Self> {
-        let mut handles: [Handle<Self, S>; N_BUCKETS] = Default::default();
-        let mut prefixes: [NibbleBuf; N_BUCKETS - 1] = Default::default();
-        for i in 0..N_BUCKETS {
-            handles[i] = Handle::restore(source)?;
-        }
-        for i in 0..N_BUCKETS - 1 {
-            prefixes[i] = NibbleBuf::restore(source)?;
-        }
-        Ok(Radix { handles, prefixes })
-    }
-}
-
 impl<K, V, A, S> Compound<S> for Radix<K, V, A, S>
 where
-    K: 'static,
-    V: Content<S>,
+    K: 'static + Canon<S>,
+    V: Canon<S>,
     A: Annotation<V, S>,
     S: Store,
 {
@@ -407,17 +385,17 @@ mod test {
     use super::*;
 
     use std::collections::hash_map::DefaultHasher;
-    use std::fmt;
     use std::hash::{Hash, Hasher};
 
     use kelvin::{
         annotations::Cardinality, quickcheck_map, tests::CorrectEmptyState,
-        Blake2b,
     };
+
+    use canonical_host::MemStore;
 
     #[test]
     fn trivial_map() {
-        let mut h = Radix::<_, _, Void, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, MemStore>::new();
         h.insert(String::from("hello"), String::from("world"))
             .unwrap();
         assert_eq!(*h.get("hello").unwrap().unwrap(), "world");
@@ -425,7 +403,7 @@ mod test {
 
     #[test]
     fn bigger_map() {
-        let mut h = Radix::<_, _, Void, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, MemStore>::new();
         for i in 0u16..1024 {
             let b = i.to_be_bytes();
             assert_eq!(h.insert(b, i).unwrap(), None);
@@ -436,7 +414,7 @@ mod test {
 
     #[test]
     fn insert_remove() {
-        let mut h = Radix::<_, _, Void, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, MemStore>::new();
         let n = 1024;
         for i in 0u16..n {
             let b = i.to_be_bytes();
@@ -460,7 +438,7 @@ mod test {
             keys[i as usize] = key;
         }
 
-        let mut h = Radix::<_, _, Void, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, MemStore>::new();
         for key in keys.iter() {
             let b = key.to_be_bytes();
             h.insert(b, *key).unwrap();
@@ -471,33 +449,33 @@ mod test {
     #[test]
     fn different_length_keys() {
         let keys = [
-            "cat",
-            "mouse",
-            "m",
-            "dog",
-            "elephant",
-            "hippopotamus",
-            "giraffe",
-            "eel",
-            "spider",
-            "bald eagle",
-            "",
+            String::from("cat"),
+            String::from("mouse"),
+            String::from("m"),
+            String::from("dog"),
+            String::from("elephant"),
+            String::from("hippopotamus"),
+            String::from("giraffe"),
+            String::from("eel"),
+            String::from("spider"),
+            String::from("bald eagle"),
+            String::from(""),
         ];
 
-        let mut h = Radix::<_, _, Void, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, MemStore>::new();
 
         for i in 0..keys.len() {
-            h.insert(keys[i], i as u16).unwrap();
+            h.insert(keys[i].clone(), i as u16).unwrap();
         }
 
         for i in 0..keys.len() {
-            assert_eq!(*h.get(keys[i]).unwrap().unwrap(), i as u16);
+            assert_eq!(*h.get(&keys[i]).unwrap().unwrap(), i as u16);
         }
     }
 
     #[test]
     fn splitting() {
-        let mut h = Radix::<_, _, Void, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, MemStore>::new();
         h.insert(vec![0x00, 0x00], 0).unwrap();
         assert_eq!(h.insert(vec![0x00, 0x00], 0).unwrap(), Some(0));
         h.insert(vec![0x00, 0x10], 8).unwrap();
@@ -508,7 +486,7 @@ mod test {
 
     #[test]
     fn borrowed_keys() {
-        let mut map = Radix::<String, u8, Void, Blake2b>::new();
+        let mut map = Radix::<String, u8, Void, MemStore>::new();
         map.insert("hello".into(), 8).unwrap();
         assert_eq!(*map.get("hello").unwrap().unwrap(), 8);
         assert_eq!(map.remove("hello").unwrap().unwrap(), 8);
@@ -516,7 +494,7 @@ mod test {
 
     #[test]
     fn collapse() {
-        let mut h = Radix::<_, _, Void, Blake2b>::new();
+        let mut h = Radix::<_, _, Void, MemStore>::new();
         h.insert(vec![0x00, 0x00], 0).unwrap();
         h.insert(vec![0x00, 0x10], 0).unwrap();
 

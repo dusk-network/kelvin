@@ -9,7 +9,7 @@ use crate::handle::Handle;
 use crate::search::Method;
 
 /// A trait for tree-like structures containing leaves
-pub trait Compound<S>: Canon<S> + Clone + Default
+pub trait Compound<S>: Canon<S> + Default
 where
     S: Store,
 {

@@ -116,9 +116,7 @@ where
                 }
             }
             HandleMut::Node(ref mut node) => {
-                return node.val_mut(|node| {
-                    node.sub_insert(depth + 1, h, k.clone(), v.clone())
-                })
+                return node.val_mut(|node| node.sub_insert(depth + 1, h, k, v))
             }
         };
 

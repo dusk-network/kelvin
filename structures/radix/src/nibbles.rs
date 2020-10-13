@@ -1,12 +1,12 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use std::cmp;
-use std::fmt;
-use std::io::{self, Write};
-use std::mem;
+use core::cmp;
+use core::mem;
 
-use kelvin::{tests::arbitrary, ByteHash, Content, Sink, Source};
+use canonical::Canon;
+use canonical_derive::Canon;
+use kelvin::tests::arbitrary;
 
 pub trait AsNibbles {
     fn as_nibbles(&self) -> Nibbles;
@@ -54,7 +54,7 @@ impl<'a> Nibbles<'a> {
 
     pub fn get(&self, idx: usize) -> usize {
         let byte_index = (self.ofs_front + idx) / 2;
-        let byte = self.bytes[byte_index];
+        let byte = self.bytes[byte_index as usize];
 
         // pick the right nibble from the byte
         // when front + offset is even, we pick the first
@@ -104,25 +104,11 @@ impl<'a> Nibbles<'a> {
     }
 }
 
-impl<'a> fmt::Debug for Nibbles<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let len = self.len();
-        write!(f, "[")?;
-        if len > 0 {
-            for i in 0..len - 1 {
-                write!(f, "{:x}, ", self.get(i))?;
-            }
-            write!(f, "{:x}", self.get(len - 1))?;
-        }
-        write!(f, "]")
-    }
-}
-
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Canon, Debug)]
 pub struct NibbleBuf {
     bytes: Vec<u8>,
-    ofs_front: usize,
-    ofs_back: usize,
+    ofs_front: u16,
+    ofs_back: u16,
 }
 
 impl arbitrary::Arbitrary for NibbleBuf {
@@ -144,8 +130,8 @@ impl arbitrary::Arbitrary for NibbleBuf {
         }
         Ok(NibbleBuf {
             bytes,
-            ofs_front: ofs_front as usize,
-            ofs_back: ofs_back as usize,
+            ofs_front: ofs_front,
+            ofs_back: ofs_back,
         })
     }
 }
@@ -186,7 +172,7 @@ impl NibbleBuf {
         NibbleBuf {
             bytes: vec,
             ofs_front: 0,
-            ofs_back: bytes.len() * 2,
+            ofs_back: bytes.len() as u16 * 2,
         }
     }
 
@@ -195,11 +181,11 @@ impl NibbleBuf {
     }
 
     pub fn len(&self) -> usize {
-        self.ofs_back - self.ofs_front
+        (self.ofs_back - self.ofs_front) as usize
     }
 
     pub fn trim_front(&mut self, by: usize) {
-        self.ofs_front += by;
+        self.ofs_front += by as u16;
         debug_assert!(self.ofs_front <= self.ofs_back)
     }
 
@@ -211,15 +197,15 @@ impl NibbleBuf {
     }
 
     pub fn set(&mut self, idx: usize, to: usize) {
-        let byte_index = (self.ofs_front + idx) / 2;
-        if byte_index >= self.bytes.len() {
+        let byte_index = (self.ofs_front + idx as u16) / 2;
+        if byte_index >= self.bytes.len() as u16 {
             self.bytes.push(0);
         };
-        let byte = &mut self.bytes[byte_index];
+        let byte = &mut self.bytes[byte_index as usize];
 
         // pick the right nibble from the byte
         // when front + offset is even, we pick the first
-        if (idx + self.ofs_front) % 2 == 0 {
+        if (idx + self.ofs_front as usize) % 2 == 0 {
             *byte &= 0x0F;
             *byte |= ((to as u8) << 4) & 0xF0;
         } else {
@@ -242,17 +228,12 @@ impl NibbleBuf {
     }
 }
 
-impl fmt::Debug for NibbleBuf {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.as_nibbles().fmt(f)
-    }
-}
 impl Into<NibbleBuf> for Nibbles<'_> {
     fn into(self) -> NibbleBuf {
         NibbleBuf {
             bytes: self.bytes.into(),
-            ofs_front: self.ofs_front,
-            ofs_back: self.ofs_back,
+            ofs_front: self.ofs_front as u16,
+            ofs_back: self.ofs_back as u16,
         }
     }
 }
@@ -261,60 +242,9 @@ impl AsNibbles for NibbleBuf {
     fn as_nibbles(&self) -> Nibbles {
         Nibbles {
             bytes: &self.bytes,
-            ofs_front: self.ofs_front,
-            ofs_back: self.ofs_back,
+            ofs_front: self.ofs_front as usize,
+            ofs_back: self.ofs_back as usize,
         }
-    }
-}
-
-impl<S> Content<S> for NibbleBuf
-where
-    H: ByteHash,
-{
-    fn persist(&mut self, sink: &mut Sink<S>) -> io::Result<()> {
-        // different cases illustrated
-
-        // A [|0 0, 0 0|] 0 3 - two bytes
-
-        // B [|0 0, 0 0, 0|0 ] 0 4 - three bytes
-
-        // B [ 0|0, 0 0| ] 1 3 - two bytes
-
-        // B [ 0|0, 0 0, 0|0 ] 1 4 - three bytes
-
-        let byte_range_start = self.ofs_front / 2;
-        let byte_range_end = (self.ofs_back + 1) / 2;
-
-        // if both are odd, end range needs to be one longer
-
-        // normalize offsets
-        let mut new_ofs_front: u16 =
-            (self.ofs_front - byte_range_start * 2) as u16;
-        let mut new_ofs_back: u16 =
-            (self.ofs_back - byte_range_start * 2) as u16;
-
-        new_ofs_front.persist(sink)?;
-        new_ofs_back.persist(sink)?;
-
-        sink.write_all(&self.bytes[byte_range_start..byte_range_end])
-    }
-
-    fn restore(source: &mut Source<S>) -> io::Result<Self> {
-        let ofs_front = u16::restore(source)? as usize;
-        let ofs_back = u16::restore(source)? as usize;
-
-        let byte_len = (ofs_back + 1) / 2;
-
-        let mut vec = Vec::with_capacity(byte_len);
-        for _ in 0..byte_len {
-            vec.push(u8::restore(source)?)
-        }
-
-        Ok(NibbleBuf {
-            bytes: vec,
-            ofs_front,
-            ofs_back,
-        })
     }
 }
 
@@ -322,11 +252,12 @@ where
 mod test {
     use super::*;
 
-    use kelvin::{tests::fuzz_content, Blake2b};
+    use canonical_host::MemStore;
+    use kelvin::tests::fuzz_content;
 
     #[test]
     fn fuzz() {
-        fuzz_content::<NibbleBuf, Blake2b>();
+        fuzz_content::<NibbleBuf, MemStore>();
     }
 
     #[test]

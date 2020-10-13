@@ -14,7 +14,7 @@ macro_rules! quickcheck_map {
         use std::collections::HashMap;
 
         use canonical::Store;
-        use canonical_host::MemStore;
+        use canonical_host::MemStore as __MemStore;
 
         use $crate::tests::CorrectEmptyState as _;
 
@@ -64,7 +64,7 @@ macro_rules! quickcheck_map {
         }
 
         fn run_ops(ops: Vec<Op>) -> bool {
-            let store = MemStore::new();
+            let store = __MemStore::new();
 
             let mut test = $new_map();
             let mut model = HashMap::new();
@@ -158,15 +158,14 @@ macro_rules! quickcheck_map {
                         store.put(&test).unwrap();
                     }
                     Op::Hash => {
-                        let _ = MemStore::ident(&test);
+                        let _ = __MemStore::ident(&test);
                     }
                     Op::HashPersist => {
-                        let root_hash = MemStore::ident(&test);
+                        let root_hash = __MemStore::ident(&test);
                         let ident = store.put(&test).unwrap();
                         assert_eq!(root_hash, ident)
                     }
                     Op::PersistRestore => {
-                        println!("{:?}", test);
                         let ident = store.put(&test).unwrap();
                         test = store.get(&ident).unwrap();
                     }

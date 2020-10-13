@@ -10,3 +10,8 @@ version = "0.11.0"
 
 [dependencies]
 kelvin = { path = "../..", version = "0.19" }
+canonical = { path = "../../../canonical/canon" }
+canonical_derive = { path = "../../../canonical/canon_derive" }
+
+[dev-dependencies]
+canonical_host = { path = "../../../canonical/canon_host" }

@@ -23,6 +23,25 @@ where
     None,
 }
 
+impl<S, C> PartialEq for HandleInner<C, S>
+where
+    S: Store,
+    C: Compound<S>,
+{
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (HandleInner::Leaf(a), HandleInner::Leaf(b)) => {
+                S::ident(a) == S::ident(b)
+            }
+            (HandleInner::Node(a, _), HandleInner::Node(b, _)) => {
+                S::ident(a) == S::ident(b)
+            }
+            (HandleInner::None, HandleInner::None) => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 /// Represents the type of the handle
 pub enum HandleType {
@@ -53,6 +72,16 @@ where
             HandleInner::Leaf(ref l) => write!(f, "Leaf({:?})", l),
             HandleInner::Node(ref n, _) => write!(f, "Node({:?})", n.val()),
         }
+    }
+}
+
+impl<C, S> PartialEq for Handle<C, S>
+where
+    C: Compound<S>,
+    S: Store,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
     }
 }
 
@@ -169,7 +198,7 @@ where
     /// Get a mutable reference to the underlying node in a closure
     pub fn val_mut<R, F>(&mut self, f: F) -> Result<R, S::Error>
     where
-        F: Fn(&mut C) -> Result<R, S::Error>,
+        F: FnOnce(&mut C) -> Result<R, S::Error>,
     {
         match self.inner {
             HandleInner::Node(ref mut n, _) => n.val_mut(f),
@@ -296,12 +325,12 @@ where
         }
     }
 
-    pub(crate) fn node_hash(&mut self) -> Result<Option<S::Ident>, S::Error> {
-        Ok(match self.0 {
+    pub(crate) fn node_hash(&mut self) -> Option<S::Ident> {
+        match self.0 {
             HandleInner::None => None,
             HandleInner::Leaf(_) => None,
-            HandleInner::Node(ref mut n, ..) => Some(n.get_id()?),
-        })
+            HandleInner::Node(ref mut n, ..) => Some(n.get_id()),
+        }
     }
 
     /// Return the annotation for the handle, unless None
@@ -347,5 +376,99 @@ where
 {
     fn annotation(&self) -> Option<Cow<C::Annotation>> {
         self.annotation()
+    }
+}
+
+#[cfg(test)]
+mod arbitrary {
+    use super::*;
+    use crate::annotations::Void;
+    use crate::tests::arbitrary::{self, Arbitrary};
+    use crate::tests::fuzz_content;
+
+    use canonical_host::MemStore;
+
+    #[derive(Clone, Canon, Debug)]
+    struct BogoTron<S: Store>([Handle<Self, S>; 1]);
+
+    impl<S> PartialEq for BogoTron<S>
+    where
+        S: Store,
+    {
+        fn eq(&self, other: &Self) -> bool {
+            self.0[0] == other.0[0]
+        }
+    }
+
+    impl<S: Store> Default for BogoTron<S> {
+        fn default() -> Self {
+            BogoTron([Handle::new_empty()])
+        }
+    }
+
+    impl<S> Compound<S> for BogoTron<S>
+    where
+        S: Store,
+    {
+        type Leaf = Option<[u128; 32]>;
+        type Annotation = Void;
+
+        fn children(&self) -> &[Handle<Self, S>] {
+            &self.0[..]
+        }
+
+        fn children_mut(&mut self) -> &mut [Handle<Self, S>] {
+            &mut self.0[..]
+        }
+    }
+
+    impl<S> Arbitrary for BogoTron<S>
+    where
+        S: Store,
+    {
+        fn arbitrary(
+            u: &mut arbitrary::Unstructured<'_>,
+        ) -> arbitrary::Result<Self> {
+            Ok(BogoTron([Arbitrary::arbitrary(u)?]))
+        }
+    }
+
+    impl<C, S> Arbitrary for Handle<C, S>
+    where
+        S: Store,
+        C: Compound<S> + Arbitrary,
+        C::Leaf: Arbitrary,
+    {
+        fn arbitrary(
+            u: &mut arbitrary::Unstructured<'_>,
+        ) -> arbitrary::Result<Self> {
+            #[derive(Arbitrary)]
+            enum ABC {
+                A,
+                B,
+                C,
+            }
+
+            match ABC::arbitrary(u)? {
+                ABC::A => Ok(Handle::new_empty()),
+                ABC::B => Ok(Handle::new_leaf(Arbitrary::arbitrary(u)?)),
+                ABC::C => {
+                    let mut nested = Handle::new_empty();
+                    while nested.is_none() {
+                        nested = Handle::arbitrary(u)?;
+                    }
+
+                    let mut comp = C::default();
+                    comp.children_mut()[0] = nested;
+
+                    Ok(Handle::new_node(comp).unwrap())
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fuzz_handle() {
+        fuzz_content::<BogoTron<MemStore>, MemStore>();
     }
 }
