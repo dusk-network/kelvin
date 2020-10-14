@@ -10,30 +10,29 @@ use crate::compound::Compound;
 use crate::search::{First, Method};
 
 /// An iterator over the leaves of a Compound type
-pub enum LeafIter<'a, C, M, S>
+pub enum LeafIter<C, M, S>
 where
     C: Compound<S>,
     S: Store,
 {
-    Initial(&'a C, M),
-    Branch(Branch<'a, C, S>, M),
+    Initial(C, M),
+    Branch(Branch<C, S>, M),
     Exhausted,
 }
 
-impl<'a, C, M, S> Iterator for LeafIter<'a, C, M, S>
+impl<C, M, S> Iterator for LeafIter<'a, C, M, S>
 where
     C: Compound<S>,
-    M: 'a + Method<C, S>,
+    M: Method<C, S>,
     S: Store,
-    C::Leaf: 'a,
 {
-    type Item = Result<&'a C::Leaf, S::Error>;
+    type Item = Result<C::Leaf, S::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let old = mem::replace(self, LeafIter::Exhausted);
         match old {
             LeafIter::Initial(node, mut method) => {
-                match Branch::new(node, &mut method) {
+                match Branch::new(node.clone(), &mut method) {
                     Ok(Some(branch)) => {
                         *self = LeafIter::Branch(branch, method);
                     }
@@ -55,9 +54,7 @@ where
             LeafIter::Exhausted => return None,
         }
 
-        let self_unsafe: &'a mut Self = unsafe { mem::transmute(self) };
-
-        match self_unsafe {
+        match self {
             LeafIter::Branch(ref branch, _) => Some(Ok(&*branch)),
             LeafIter::Initial(_, _) => unreachable!(),
             LeafIter::Exhausted => None,
@@ -65,17 +62,17 @@ where
     }
 }
 
-pub enum LeafIterMut<'a, C, M, S>
+pub enum LeafIterMut<C, M, S>
 where
     C: Compound<S>,
     S: Store,
 {
-    Initial(&'a mut C, M),
-    Branch(BranchMut<'a, C, S>, M),
+    Initial(C, M),
+    Branch(BranchMut<C, S>, M),
     Exhausted,
 }
 
-impl<'a, C, M, S> Iterator for LeafIterMut<'a, C, M, S>
+impl<'a, C, M, S> Iterator for LeafIterMut<C, M, S>
 where
     C: Compound<S>,
     M: 'a + Method<C, S>,

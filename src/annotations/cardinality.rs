@@ -129,6 +129,6 @@ where
     S: Store,
 {
     fn nth(&self, i: U) -> Result<Option<Branch<Self, S>>, S::Error> {
-        Branch::new(self, &mut Nth::new(i))
+        Branch::new(self.clone(), &mut Nth::new(i))
     }
 }

@@ -6,7 +6,7 @@ use std::fmt;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 
-use canonical::{Canon, Repr, Store};
+use canonical::{Canon, Repr, Store, ValMut};
 use canonical_derive::Canon;
 
 use crate::annotations::ErasedAnnotation;
@@ -21,25 +21,6 @@ where
     Leaf(C::Leaf),
     Node(Repr<C, S>, C::Annotation),
     None,
-}
-
-impl<S, C> PartialEq for HandleInner<C, S>
-where
-    S: Store,
-    C: Compound<S>,
-{
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (HandleInner::Leaf(a), HandleInner::Leaf(b)) => {
-                S::ident(a) == S::ident(b)
-            }
-            (HandleInner::Node(a, _), HandleInner::Node(b, _)) => {
-                S::ident(a) == S::ident(b)
-            }
-            (HandleInner::None, HandleInner::None) => true,
-            _ => false,
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -75,16 +56,6 @@ where
     }
 }
 
-impl<C, S> PartialEq for Handle<C, S>
-where
-    C: Compound<S>,
-    S: Store,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
 /// User facing reference to a handle
 pub enum HandleRef<'a, C, S>
 where
@@ -93,8 +64,8 @@ where
 {
     /// Handle points at a Leaf
     Leaf(&'a C::Leaf),
-    /// Handle points at a cached Node
-    Node(Cow<'a, C>),
+    /// Handle points at a Node
+    Node(Repr<C, S>),
     /// Handle points at nothing
     None,
 }
@@ -187,7 +158,7 @@ where
     S: Store,
 {
     /// Replaces the node with `handle`
-    /// Invalidates the `HandleMutNone` if `handle` is not a node.
+    /// Invalidates the `HandleMutNode` if `handle` is not a node.
     pub fn replace(&mut self, handle: Handle<C, S>) -> Repr<C, S> {
         match mem::replace(self.inner, handle.0) {
             HandleInner::Node(n, _) => n,
@@ -196,12 +167,9 @@ where
     }
 
     /// Get a mutable reference to the underlying node in a closure
-    pub fn val_mut<R, F>(&mut self, f: F) -> Result<R, S::Error>
-    where
-        F: FnOnce(&mut C) -> Result<R, S::Error>,
-    {
+    pub fn val_mut(&mut self) -> Result<ValMut<C>, S::Error> {
         match self.inner {
-            HandleInner::Node(ref mut n, _) => n.val_mut(f),
+            HandleInner::Node(ref mut n, _) => n.val_mut(),
             _ => panic!("multiple incompatible replaces"),
         }
     }
@@ -325,11 +293,11 @@ where
         }
     }
 
-    pub(crate) fn node_hash(&mut self) -> Option<S::Ident> {
+    pub(crate) fn node_hash(&self) -> Option<S::Ident> {
         match self.0 {
             HandleInner::None => None,
             HandleInner::Leaf(_) => None,
-            HandleInner::Node(ref mut n, ..) => Some(n.get_id()),
+            HandleInner::Node(ref n, ..) => Some(n.get_id()),
         }
     }
 
@@ -349,7 +317,7 @@ where
         Ok(match self.0 {
             HandleInner::None => HandleRef::None,
             HandleInner::Leaf(ref l) => HandleRef::Leaf(l),
-            HandleInner::Node(ref n, _) => HandleRef::Node(n.val()?),
+            HandleInner::Node(ref n, _) => HandleRef::Node(n.clone()),
         })
     }
 
@@ -395,7 +363,7 @@ mod arbitrary {
         S: Store,
     {
         fn eq(&self, other: &Self) -> bool {
-            self.0[0] == other.0[0]
+            S::ident(&self.0[0]) == S::ident(&other.0[0])
         }
     }
 
@@ -409,7 +377,7 @@ mod arbitrary {
     where
         S: Store,
     {
-        type Leaf = Option<[u128; 32]>;
+        type Leaf = Option<[u128; 1]>;
         type Annotation = Void;
 
         fn children(&self) -> &[Handle<Self, S>] {
@@ -468,6 +436,7 @@ mod arbitrary {
 
     #[test]
     fn fuzz_handle() {
-        fuzz_canon::<BogoTron<MemStore>, MemStore>();
+        let store = MemStore::new();
+        fuzz_canon::<BogoTron<_>, _>(store);
     }
 }

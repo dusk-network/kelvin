@@ -116,7 +116,7 @@ where
                 }
             }
             HandleMut::Node(ref mut node) => {
-                return node.val_mut(|node| node.sub_insert(depth + 1, h, k, v))
+                return node.val_mut()?.sub_insert(depth + 1, h, k, v)
             }
         };
 
@@ -180,9 +180,7 @@ where
                     }
                 }
                 HandleMut::Node(ref mut node) => {
-                    match node
-                        .val_mut(|node| node.sub_remove(depth + 1, h, k))?
-                    {
+                    match node.val_mut()?.sub_remove(depth + 1, h, k)? {
                         Removed::Collapse(removed, reinsert) => {
                             removed_leaf = removed.into();
                             node.replace(Handle::new_leaf(reinsert.into()));

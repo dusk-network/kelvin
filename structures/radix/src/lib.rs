@@ -229,7 +229,7 @@ where
                 self.handles[i].inner_mut()?
             {
                 search.trim_front(common.len());
-                node.val_mut(|n| n._insert(search, v))
+                node.val_mut()?._insert(search, v)
             } else {
                 unreachable!()
             }
@@ -305,7 +305,7 @@ where
                     self.handles[i].inner_mut()?
                 {
                     search.trim_front(common.len());
-                    match node.val_mut(|n| n._remove(search, depth + 1))? {
+                    match node.val_mut()?._remove(search, depth + 1)? {
                         Removed::Collapse(
                             removed,
                             reinsert,

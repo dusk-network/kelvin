@@ -55,52 +55,52 @@ impl<K, V> BorrowMut<V> for KV<K, V> {
 }
 
 /// A path to a leaf in a map Compound
-pub struct ValPath<'a, K, V, C, S>
+pub struct ValPath<K, V, C, S>
 where
     C: Compound<S>,
     S: Store,
 {
-    branch: Branch<'a, C, S>,
+    branch: Branch<C, S>,
     _marker: PhantomData<(K, V)>,
 }
 
 /// A path to a mutable leaf in a map Compound
-pub struct ValPathMut<'a, K, V, C, S>
+pub struct ValPathMut<K, V, C, S>
 where
     C: Compound<S>,
     S: Store,
 {
-    branch: BranchMut<'a, C, S>,
+    branch: BranchMut<C, S>,
     _marker: PhantomData<(K, V)>,
 }
 
-// The following
-unsafe impl<'a, K, V, C, S> StableAddress for ValPath<'a, K, V, C, S>
-where
-    C: Compound<S>,
-    C::Leaf: Borrow<V>,
-    S: Store,
-{
-}
-unsafe impl<'a, K, V, C, S> StableAddress for ValPathMut<'a, K, V, C, S>
-where
-    C: Compound<S>,
-    C::Leaf: Borrow<V>,
-    S: Store,
-{
-}
+// // The following
+// unsafe impl<K, V, C, S> StableAddress for ValPath<K, V, C, S>
+// where
+//     C: Compound<S>,
+//     C::Leaf: Borrow<V>,
+//     S: Store,
+// {
+// }
+// unsafe impl<'a, K, V, C, S> StableAddress for ValPathMut<'a, K, V, C, S>
+// where
+//     C: Compound<S>,
+//     C::Leaf: Borrow<V>,
+//     S: Store,
+// {
+// }
 
-impl<'a, K, V, C, S> ValPath<'a, K, V, C, S>
+impl<K, V, C, S> ValPath<K, V, C, S>
 where
     C: Compound<S>,
     S: Store,
 {
     /// Creates a new `ValPath`, when leaf is found and key matches
-    pub fn new<M>(node: &'a C, method: &mut M) -> Result<Option<Self>, S::Error>
+    pub fn new<M>(node: &C, method: &mut M) -> Result<Option<Self>, S::Error>
     where
         M: Method<C, S>,
     {
-        Ok(Branch::new(node, method)?
+        Ok(Branch::new(node.clone(), method)?
             .filter(|branch| branch.exact())
             .map(|branch| ValPath {
                 branch,
@@ -109,14 +109,14 @@ where
     }
 }
 
-impl<'a, K, V, C, S> ValPathMut<'a, K, V, C, S>
+impl<K, V, C, S> ValPathMut<K, V, C, S>
 where
     C: Compound<S>,
     S: Store,
 {
     /// Creates a new `ValPathMut`
     pub fn new<M>(
-        node: &'a mut C,
+        node: &mut C,
         method: &mut M,
     ) -> Result<Option<Self>, S::Error>
     where
@@ -131,7 +131,7 @@ where
     }
 }
 
-impl<'a, K, V, C, S> Deref for ValPath<'a, K, V, C, S>
+impl<'a, K, V, C, S> Deref for ValPath<K, V, C, S>
 where
     C: Compound<S>,
     C::Leaf: Borrow<V>,
@@ -144,7 +144,7 @@ where
     }
 }
 
-impl<'a, K, V, C, S> Deref for ValPathMut<'a, K, V, C, S>
+impl<K, V, C, S> Deref for ValPathMut<K, V, C, S>
 where
     C: Compound<S>,
     C::Leaf: Borrow<V>,
@@ -157,7 +157,7 @@ where
     }
 }
 
-impl<'a, K, V, C, S> DerefMut for ValPathMut<'a, K, V, C, S>
+impl<K, V, C, S> DerefMut for ValPathMut<K, V, C, S>
 where
     C: Compound<S>,
     C::Leaf: BorrowMut<V>,
@@ -168,12 +168,12 @@ where
     }
 }
 
-pub struct ValIter<'a, C, V, M, S>(LeafIter<'a, C, M, S>, PhantomData<V>)
+pub struct ValIter<C, V, M, S>(LeafIter<'a, C, M, S>, PhantomData<V>)
 where
     C: Compound<S>,
     S: Store;
 
-pub struct ValIterMut<'a, C, V, M, S>(LeafIterMut<'a, C, M, S>, PhantomData<V>)
+pub struct ValIterMut<C, V, M, S>(LeafIterMut<C, M, S>, PhantomData<V>)
 where
     C: Compound<S>,
     S: Store;

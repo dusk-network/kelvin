@@ -252,12 +252,13 @@ impl AsNibbles for NibbleBuf {
 mod test {
     use super::*;
 
+    use canonical_fuzz::fuzz_canon;
     use canonical_host::MemStore;
-    use kelvin::tests::fuzz_content;
 
     #[test]
     fn fuzz() {
-        fuzz_content::<NibbleBuf, MemStore>();
+        let store = MemStore::default();
+        fuzz_canon::<NibbleBuf, MemStore>(store);
     }
 
     #[test]

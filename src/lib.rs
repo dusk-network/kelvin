@@ -16,7 +16,6 @@ mod compound;
 mod handle;
 mod iter;
 mod map;
-mod proof;
 mod raw_branch;
 mod search;
 
@@ -31,6 +30,5 @@ pub use crate::handle::{
 };
 pub use crate::iter::LeafIterable;
 pub use crate::map::{ValIterable, ValPath, ValPathMut, ValRef, ValRefMut, KV};
-pub use crate::proof::Proof;
 pub use crate::raw_branch::Level;
 pub use crate::search::{Method, SearchResult};

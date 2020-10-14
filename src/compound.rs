@@ -1,7 +1,7 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 // Licensed under the MPL 2.0 license. See LICENSE file in the project root for details.
 
-use canonical::{Canon, Store};
+use canonical::{Canon, Repr, Store};
 
 use crate::annotations::Combine;
 use crate::branch::{Branch, BranchMut};
@@ -38,7 +38,7 @@ where
         &self,
         m: &mut M,
     ) -> Result<Option<Branch<Self, S>>, S::Error> {
-        Branch::new(self, m)
+        Branch::new(self.clone(), m)
     }
 
     /// Seach in the tree structure, with the provided method.
