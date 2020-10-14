@@ -30,12 +30,8 @@ where
 {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (HandleInner::Leaf(a), HandleInner::Leaf(b)) => {
-                S::ident(a) == S::ident(b)
-            }
-            (HandleInner::Node(a, _), HandleInner::Node(b, _)) => {
-                S::ident(a) == S::ident(b)
-            }
+            (HandleInner::Leaf(a), HandleInner::Leaf(b)) => S::ident(a) == S::ident(b),
+            (HandleInner::Node(a, _), HandleInner::Node(b, _)) => S::ident(a) == S::ident(b),
             (HandleInner::None, HandleInner::None) => true,
             _ => false,
         }
@@ -107,8 +103,7 @@ where
     fn drop(&mut self) {
         if let HandleMut::Node(nodewrap) = self {
             if let HandleInner::Node(repr, ann) = nodewrap.inner {
-                if let Ok(Some(annotation)) = repr.val().map(|v| v.annotation())
-                {
+                if let Ok(Some(annotation)) = repr.val().map(|v| v.annotation()) {
                     *ann = annotation
                 }
             }
@@ -337,9 +332,7 @@ where
     pub fn annotation(&self) -> Option<Cow<C::Annotation>> {
         match self.0 {
             HandleInner::None => None,
-            HandleInner::Leaf(ref l) => {
-                Some(Cow::Owned(C::Annotation::from(l)))
-            }
+            HandleInner::Leaf(ref l) => Some(Cow::Owned(C::Annotation::from(l))),
             HandleInner::Node(_, ref ann) => Some(Cow::Borrowed(ann)),
         }
     }
@@ -356,15 +349,9 @@ where
     /// Returns a mutable reference to the `Handle` as `HandleMut`
     pub fn inner_mut(&mut self) -> Result<HandleMut<C, S>, S::Error> {
         match self.0 {
-            HandleInner::None => {
-                Ok(HandleMut::None(HandleMutNone { inner: &mut self.0 }))
-            }
-            HandleInner::Leaf(_) => {
-                Ok(HandleMut::Leaf(HandleMutLeaf { inner: &mut self.0 }))
-            }
-            HandleInner::Node(..) => {
-                Ok(HandleMut::Node(HandleMutNode { inner: &mut self.0 }))
-            }
+            HandleInner::None => Ok(HandleMut::None(HandleMutNone { inner: &mut self.0 })),
+            HandleInner::Leaf(_) => Ok(HandleMut::Leaf(HandleMutLeaf { inner: &mut self.0 })),
+            HandleInner::Node(..) => Ok(HandleMut::Node(HandleMutNode { inner: &mut self.0 })),
         }
     }
 }
@@ -384,7 +371,7 @@ mod arbitrary {
     use super::*;
     use crate::annotations::Void;
     use crate::tests::arbitrary::{self, Arbitrary};
-    use canonical_fuzz::fuzz_canon;
+    use canonical_fuzz::{canon_encoding, fuzz_canon};
     use canonical_host::MemStore;
 
     #[derive(Clone, Canon, Debug)]
@@ -425,9 +412,7 @@ mod arbitrary {
     where
         S: Store,
     {
-        fn arbitrary(
-            u: &mut arbitrary::Unstructured<'_>,
-        ) -> arbitrary::Result<Self> {
+        fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
             Ok(BogoTron([Arbitrary::arbitrary(u)?]))
         }
     }
@@ -438,9 +423,7 @@ mod arbitrary {
         C: Compound<S> + Arbitrary,
         C::Leaf: Arbitrary,
     {
-        fn arbitrary(
-            u: &mut arbitrary::Unstructured<'_>,
-        ) -> arbitrary::Result<Self> {
+        fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
             #[derive(Arbitrary)]
             enum ABC {
                 A,
@@ -469,5 +452,29 @@ mod arbitrary {
     #[test]
     fn fuzz_handle() {
         fuzz_canon::<BogoTron<MemStore>, MemStore>();
+    }
+
+    #[test]
+    fn fail_handle() {
+        let node = BogoTron([Handle(HandleInner::Leaf(None))]);
+        let ann = node.annotation().expect("Empty node handles are invalid");
+        let nested = BogoTron([Handle(HandleInner::Node(
+            Repr::new(node.clone()).unwrap(),
+            ann,
+        ))]);
+
+        // This pass
+        assert_eq!(
+            canon_encoding::<BogoTron<MemStore>, MemStore>(&node),
+            node.encoded_len(),
+            "Simple BogoTron"
+        );
+
+        // This fails
+        assert_eq!(
+            canon_encoding::<BogoTron<MemStore>, MemStore>(&nested),
+            nested.encoded_len(),
+            "Nested BogoTron"
+        );
     }
 }
